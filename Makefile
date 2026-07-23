@@ -15,6 +15,20 @@ else
 LDFLAGS=
 endif
 
+## Portable distribution build (opt-in). Produces a fully-static binary with no
+## network dependencies (no libcurl/OpenSSL) and portable SSE4.1 SIMD for spoa, so the
+## result runs on any x86-64 Linux. Orthogonal to STATIC above: a plain `make` and
+## `make STATIC=1` are byte-for-byte unaffected. Build with:  make PORTABLE=1
+NETWORK_LIBS        = -lcurl -lcrypto
+HTSLIB_CONFIG_FLAGS = --enable-gcs --enable-s3 --enable-libcurl
+SPOA_CMAKE_FLAGS    =
+ifeq ($(PORTABLE),1)
+LDFLAGS             = -static
+NETWORK_LIBS        =
+HTSLIB_CONFIG_FLAGS = --disable-libcurl --disable-gcs --disable-s3 --disable-plugins
+SPOA_CMAKE_FLAGS    = -Dspoa_optimize_for_native=OFF -Dspoa_optimize_for_portability=ON
+endif
+
 
 
 ## Source code files, add new files to this list
@@ -25,7 +39,7 @@ SRC_DENOVO  = src/denovos/denovo_main.cpp src/error.cpp src/stringops.cpp src/ve
 
 CEPHES_ROOT=lib/cephes
 
-LIBS              = -L./ -lm -Llib/htslib/lib -lhts -ldeflate -lz -L$(CEPHES_ROOT)/ -llzma -lbz2 -lcurl -lcrypto -Llib/spoa/build/lib -lspoa
+LIBS              = -L./ -lm -Llib/htslib/lib -lhts -ldeflate -lz -L$(CEPHES_ROOT)/ -llzma -lbz2 $(NETWORK_LIBS) -Llib/spoa/build/lib -lspoa
 INCLUDE           = -Ilib -Ilib/htslib/include -Ilib/spoa/include
 CEPHES_LIB        = lib/cephes/libprob.a
 HTSLIB_LIB        = lib/htslib/lib/libhts.a
@@ -46,6 +60,22 @@ static-dist:
 	$(MAKE) STATIC=1
 	( VER="$$(git describe --abbrev=7 --dirty --always --tags)" ;\
 	  DST="LongTR-$${VER}-static-$$(uname -s)-$$(uname -m)" ; \
+	  mkdir "$${DST}" && \
+            mkdir "$${DST}/scripts" && \
+            cp LongTR VizAln VizAlnPdf README.md "$${DST}" && \
+            cp scripts/filter_haploid_vcf.py scripts/filter_vcf.py scripts/generate_aln_html.py scripts/html_alns_to_pdf.py "$${DST}/scripts" && \
+            tar -czvf "$${DST}.tar.gz" "$${DST}" && \
+            rm -r "$${DST}/" \
+        )
+
+# Create a tarball with a portable, fully-static binary (opt-in; no network deps,
+# portable SIMD). Intended for distributable releases. Usage:  make portable-dist
+.PHONY: portable-dist
+portable-dist:
+	rm -f LongTR
+	$(MAKE) PORTABLE=1 HTSLIB-docker SPOA-docker LongTR DenovoFinder && strip LongTR DenovoFinder
+	( VER="$${VER:-$$(git describe --abbrev=7 --dirty --always --tags 2>/dev/null || echo dev)}" ;\
+	  DST="LongTR-$${VER}-portable-$$(uname -s)-$$(uname -m)" ; \
 	  mkdir "$${DST}" && \
             mkdir "$${DST}/scripts" && \
             cp LongTR VizAln VizAlnPdf README.md "$${DST}" && \
@@ -88,12 +118,12 @@ HTSLIB-update: HTSLIB
 
 .PHONY: HTSLIB-docker
 HTSLIB-docker: HTSLIB-update
-	@cd lib/htslib && autoreconf -i && ./configure --prefix="$(CURDIR)"/lib/htslib --enable-gcs --enable-s3 --enable-libcurl && make -j && make install
+	@cd lib/htslib && autoreconf -i && ./configure --prefix="$(CURDIR)"/lib/htslib $(HTSLIB_CONFIG_FLAGS) && make -j && make install
 
 .PHONY: SPOA
 SPOA:
 	@if [ ! -d "lib/spoa" ]; then \
-		cd lib && git clone git@github.com:rvaser/spoa.git && cd ..;\
+		cd lib && git clone https://github.com/rvaser/spoa.git && cd ..;\
 	else\
 		echo "spoa directory already exists in lib/ folder";\
 	fi
@@ -105,9 +135,9 @@ SPOA-update: SPOA
 .PHONY: SPOA-docker
 SPOA-docker: SPOA-update
 	@if [ ! -d "lib/spoa/build" ]; then \
-		cd lib/spoa && mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && cd .. && make -C build;\
+		cd lib/spoa && mkdir build && cd build && cmake $(SPOA_CMAKE_FLAGS) -DCMAKE_BUILD_TYPE=Release .. && cd .. && make -C build;\
 	else\
-		cd lib/spoa/build && cmake -DCMAKE_BUILD_TYPE=Release .. && cd .. && make -C build;\
+		cd lib/spoa/build && cmake $(SPOA_CMAKE_FLAGS) -DCMAKE_BUILD_TYPE=Release .. && cd .. && make -C build;\
 	fi
 
 LongTR: $(OBJ_COMMON) $(OBJ_HIPSTR) $(HTSLIB_LIB) $(OBJ_SEQALN)

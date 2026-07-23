@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  default-build:
+    name: Default build (dynamic) + smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake git autoconf automake libtool \
+            zlib1g-dev libbz2-dev liblzma-dev libdeflate-dev \
+            libcurl4-openssl-dev libssl-dev
+
+      - name: Build (unchanged default configuration)
+        run: |
+          make version
+          make HTSLIB-docker SPOA-docker
+          make -j"$(nproc)" LongTR DenovoFinder
+
+      - name: Smoke test
+        run: ./LongTR --help
+
+  portable-build:
+    name: Portable static build (Alpine / musl)
+    runs-on: ubuntu-latest
+    env:
+      DOCKER_BUILDKIT: 1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: ver
+        run: echo "version=$(git describe --tags --always --dirty)" >> "$GITHUB_OUTPUT"
+
+      - name: Embed version
+        run: make version
+
+      - name: Build portable static tarball
+        run: |
+          docker build \
+            --build-arg VERSION="${{ steps.ver.outputs.version }}" \
+            --target artifact --output type=local,dest=./dist .
+
+      - name: Verify static + smoke test
+        run: |
+          file ./dist/LongTR
+          ldd ./dist/LongTR || true          # musl static: prints "not a dynamic executable"
+          ./dist/LongTR --help
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LongTR-portable-linux-x86_64
+          path: dist/*.tar.gz
+          if-no-files-found: error
