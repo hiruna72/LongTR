@@ -109,6 +109,8 @@ public:
     FRAC_LL_CONVERGE       = 0.001;
     MIN_TOTAL_READS        = 10;
     MAX_TOTAL_HAPLOTYPES   = 1000;
+    SKIP_ALN_WORK_OVER     = -1;
+    LOG_LOCUS_SIGNALS      = 0;
     MAX_FLANK_HAPLOTYPES   = 4;
     INDEL_FLANK_LEN        = 5;
     SWITCH_OLD_ALIGN_LEN   = 0;
@@ -249,6 +251,8 @@ public:
   int32_t MIN_TOTAL_READS;  // Minimum total reads required to genotype locus
 
   int MAX_TOTAL_HAPLOTYPES;
+  double SKIP_ALN_WORK_OVER;  // Temporary calibration knob: skip (and log) any locus whose predicted alignment work exceeds this. <=0 disables.
+  int LOG_LOCUS_SIGNALS;      // If set, emit per-locus predictive signals (LOCUS_SIGNALS line + human-readable) for k calibration. Default off.
   int INDEL_FLANK_LEN;
   int SWITCH_OLD_ALIGN_LEN;
 

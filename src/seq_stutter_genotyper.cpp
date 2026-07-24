@@ -77,7 +77,7 @@ bool SeqStutterGenotyper::assemble_flanks(int max_total_haplotypes, int max_flan
 				for(read_index = min_read_index; read_index < num_reads_; read_index++){
 					if (sample_label_[read_index] != sample_index)
 						break;
-					if (traced_alns[read_index] == NULL)
+					if (traced_alns.empty() || traced_alns[read_index] == NULL)
 						continue;
 					std::string seq = ""; // read flank sequence extraction is not working now.
 					if(seq.empty()) continue;
@@ -102,7 +102,7 @@ bool SeqStutterGenotyper::assemble_flanks(int max_total_haplotypes, int max_flan
 					for (read_index = min_read_index; read_index < num_reads_; read_index++){
 						if (sample_label_[read_index] != sample_index)
 							break;
-						if (traced_alns[read_index] == NULL)
+						if (traced_alns.empty() || traced_alns[read_index] == NULL)
 							continue;
 
 						std::string seq = traced_alns[read_index]->flank_seq(block_index);
@@ -505,6 +505,30 @@ void SeqStutterGenotyper::init(std::vector<StutterModel*>& stutter_models, const
 	}
 }
 
+void SeqStutterGenotyper::record_predictive_signals(){
+	// Signals that feed the runtime-guard work model (see doc §3). Captured once, just before the
+	// initial haplotype-alignment pass, so they describe the *initial* alignment cost (independent
+	// of later growth from flank reassembly). Used both for calibration logging (item 1) and,
+	// later, the predictive guard itself (item 2), so the work definition lives in one place.
+	initial_num_alleles_   = num_alleles_;               // == haplotype_->num_combs() at this point
+	initial_max_hap_size_  = haplotype_->max_size();     // upper bound on a single haplotype's length
+	AlnList& pooled_alns   = pooler_.get_alignments();
+	num_aligned_pools_     = pooled_alns.size();          // == pooler_.num_pools()
+	total_pooled_read_len_ = 0;
+	for (unsigned int i = 0; i < pooled_alns.size(); i++)
+		total_pooled_read_len_ += pooled_alns[i].get_sequence().size();
+
+	// Raw (pre-pool, pre-POA) input-read bp — a predictor of POA/haplotype-generation cost, which runs
+	// in the ctor before this point. Logged alongside hap_build_sec so POA cost can be calibrated later.
+	total_read_bp_ = 0;
+	for (unsigned int i = 0; i < alns_.size(); i++)
+		total_read_bp_ += alns_[i].get_sequence().size();
+
+	// work ≈ (Σ pooled read_len) × (num_combs × max_hap_len) = total DP cells across the initial
+	// alignment pass. predicted_sec = k · work, with k (seconds/cell) calibrated from LOCUS_SIGNALS.
+	predicted_aln_work_ = (double) total_pooled_read_len_ * (double) initial_num_alleles_ * (double) initial_max_hap_size_;
+}
+
 void SeqStutterGenotyper::calc_hap_aln_probs(std::vector<bool>& realign_to_haplotype){
 	std::vector<bool> realign_pool = std::vector<bool>(pooler_.num_pools(), true);
 	std::vector<bool> copy_read    = std::vector<bool>(num_reads_, true);
@@ -596,7 +620,7 @@ bool SeqStutterGenotyper::id_and_align_to_stutter_alleles(int max_total_haplotyp
 }
 
 
-bool SeqStutterGenotyper::genotype(int max_total_haplotypes, int max_flank_haplotypes, double min_flank_freq, std::ostream& logger){
+bool SeqStutterGenotyper::genotype(int max_total_haplotypes, int max_flank_haplotypes, double min_flank_freq, double skip_aln_work_over, std::ostream& logger){
 	// Unsuccessful initialization. May be due to
 	// 1) Failing to find the corresponding alleles in the VCF (if one has been provided)
 	// 2) Large deletion extending past STR
@@ -626,6 +650,34 @@ bool SeqStutterGenotyper::genotype(int max_total_haplotypes, int max_flank_haplo
 
 	//init_alignment_model();
 	pooler_.pool(base_quality_);
+
+	// Snapshot the predictive alignment-cost signals for the runtime guard / calibration logging.
+	// Placed here (after pooling, before the first alignment) = the exact guard insertion point (doc §3).
+	record_predictive_signals();
+
+	// Temporary calibration/skip knob (NOT the full runtime guard yet): skip a locus whose predicted
+	// alignment work exceeds --skip-aln-work-over (work = pooled_read_bp * nhap * max_hap_len; catches
+	// monsters that are cheap in nhap but expensive in read/allele length — nhap alone misses them, and the
+	// hard nhap ceiling is already handled by --max-haps). Threshold <=0 disables. Predictive signals are
+	// recorded just above, so a skipped locus still emits its LOCUS_SIGNALS / work line for k calibration.
+	// Skipping returns false => the caller writes no VCF record and the alignment loop never runs.
+	if (skip_aln_work_over > 0 && predicted_aln_work_ > skip_aln_work_over){
+		logger << "SKIP_LOCUS"
+		       << "\treason=WORK_SKIP"
+		       << "\tregion="         << region_group_->chrom() << ":" << region_group_->start() << "-" << region_group_->stop()
+		       << "\tbed_len="        << (region_group_->stop() - region_group_->start())
+		       << "\tnhap="           << num_alleles_
+		       << "\twork="           << predicted_aln_work_
+		       << "\twork_threshold=" << skip_aln_work_over
+		       << "\tpools="          << num_aligned_pools_
+		       << "\treads="          << num_reads_
+		       << "\tmax_hap_len="    << initial_max_hap_size_
+		       << "\tpooled_read_bp=" << total_pooled_read_len_
+		       << "\ttotal_read_bp="  << total_read_bp_
+		       << "\thap_build_sec="  << total_hap_build_time_
+		       << std::endl;
+		return false;
+	}
 
 	// Align each read to each candidate haplotype and store them in the provided arrays
 	logger << "Aligning reads to each candidate haplotype" << std::endl;
@@ -832,7 +884,7 @@ void SeqStutterGenotyper::get_stutter_candidate_alleles(int str_block_index, std
   std::vector<int> sample_counts(num_samples_, 0);
   std::vector< std::map<std::string, int> > sample_stutter_counts(num_samples_);
   for (unsigned int read_index = 0; read_index < num_reads_; read_index++){
-    if (traced_alns[read_index] == NULL)
+    if (traced_alns.empty() || traced_alns[read_index] == NULL)
       continue;
     AlignmentTrace* trace = traced_alns[read_index];
     if (trace->traced_aln().get_start() < str_block->start()){

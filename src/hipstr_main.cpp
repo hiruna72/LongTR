@@ -85,6 +85,10 @@ void print_usage(int def_mdist, int def_min_reads, int def_max_reads, int def_ma
 	    << "Optional haplotype filtering parameters:" << "\n"
 	    << "\t" << "--max-haps <max_haplotypes>           "  << "\t" << "Maximum allowable candidate haplotypes for an TR (Default = " << def_max_haplotypes << ")" << "\n"
 	    << "\t" << "                                      "  << "\t" << " Loci with more candidate haplotypes will not be genotyped" << "\n"
+	    << "\t" << "--skip-aln-work-over <work>           "  << "\t" << "Skip (and log a SKIP_LOCUS line for) any locus whose predicted alignment" << "\n"
+	    << "\t" << "                                      "  << "\t" << " work (pooled_read_bp x nhap x max_hap_len) exceeds this (Default = off)" << "\n"
+	    << "\t" << "--log-locus-signals                   "  << "\t" << "Emit a machine-parseable LOCUS_SIGNALS line per locus (nhap, read bp," << "\n"
+	    << "\t" << "                                      "  << "\t" << " max_hap_len, work, hap_build_sec, hap_aln_sec) for k calibration (Default = off)" << "\n"
 	    << "\t" << "--max-hap-flanks <max_flanks>         "  << "\t" << "Maximum allowable non-reference flanking sequences for an TR (Default = " << def_max_flanks << ")" << "\n"
 	    << "\t" << "                                      "  << "\t" << " Loci with more candidate flanks will not be genotyped"                              << "\n"
 	    << "\t" << "--min-flank-freq <min_freq>           "  << "\t" << "Filter a flank if its fraction of supporting samples < MIN_FREQ (Default = " << def_min_flank_freq  << ")" << "\n" << "\n"
@@ -194,6 +198,8 @@ void parse_command_line_args(int argc, char** argv,
     {"stutter-align-len",    required_argument, 0, 'O'},
     {"indel-flank-len",    required_argument, 0, 'L'},
     {"alignment-params", required_argument, 0, 'P'},
+    {"skip-aln-work-over", required_argument, 0, 1002},
+    {"log-locus-signals",  no_argument, &(bam_processor.LOG_LOCUS_SIGNALS), 1},
     {0, 0, 0, 0}
   };
 
@@ -258,6 +264,9 @@ void parse_command_line_args(int argc, char** argv,
       bam_processor.MAX_TOTAL_HAPLOTYPES = atoi(optarg);
       if (bam_processor.MAX_TOTAL_HAPLOTYPES <= 1)
 	printErrorAndDie("--max-haps must be greater than 1");
+      break;
+    case 1002:
+      bam_processor.SKIP_ALN_WORK_OVER = atof(optarg);
       break;
     case 'l':
       log_file = std::string(optarg);

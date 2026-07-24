@@ -59,6 +59,18 @@ class SeqStutterGenotyper : public Genotyper {
   double total_aln_trace_time_;
   double total_assembly_time_;
 
+  // Predictive signals for the runtime guard (see doc/longtr_findings_threading_and_nhap.md §3).
+  // Snapshotted once, just before the initial haplotype-alignment pass, so they describe the
+  // *initial* alignment cost and are unaffected by later growth from flank reassembly.
+  // Remain at the sentinel values below until record_predictive_signals() runs (i.e. the locus
+  // never reached the alignment pass).
+  int    initial_num_alleles_;    // haplotype_->num_combs() (== nhap) at build time
+  int    initial_max_hap_size_;   // haplotype_->max_size(): upper bound on a haplotype's length
+  int    num_aligned_pools_;      // pooler_.num_pools(): distinct pooled reads actually aligned
+  long   total_pooled_read_len_;  // Sum of pooled read lengths (Σ read_len over aligned pools)
+  long   total_read_bp_;          // Sum of raw input-read lengths (pre-POA/pre-pool; predicts POA generation cost)
+  double predicted_aln_work_;     // work = total_pooled_read_len_ * initial_num_alleles_ * initial_max_hap_size_
+
   // Used to identify candidate haplotypes during flank reassembly
   int MIN_PATH_WEIGHT, MIN_KMER, MAX_KMER;
 
@@ -95,6 +107,10 @@ class SeqStutterGenotyper : public Genotyper {
   // Aligns each read to each of the candidate haplotypes and stores the results in internal arrays
   void calc_hap_aln_probs(std::vector<bool>& realign_to_haplotype);
   void calc_hap_aln_probs(std::vector<bool>& realign_to_haplotype, std::vector<bool>& realign_pool, std::vector<bool>& copy_read);
+
+  // Snapshot the predictive alignment-cost signals (nhap, max hap length, pooled-read stats,
+  // and the derived work estimate) just before the initial alignment pass. See doc §1/§3.
+  void record_predictive_signals();
 
   // Identify alleles present in stutter artifacts. Align each read to the new haplotypes
   // containing these alleles and incorporate these alignment probabilities into the relevant data structures
@@ -166,6 +182,12 @@ class SeqStutterGenotyper : public Genotyper {
     reassemble_flanks_     = reassemble_flanks;
     total_hap_build_time_  = total_hap_aln_time_  = 0;
     total_aln_trace_time_  = total_assembly_time_ = 0;
+    initial_num_alleles_   = -1;
+    initial_max_hap_size_  = 0;
+    num_aligned_pools_     = 0;
+    total_pooled_read_len_ = 0;
+    total_read_bp_         = 0;
+    predicted_aln_work_    = 0.0;
     INDEL_FLANK_LEN = INDEL_FLANK_LEN_;
     SWITCH_OLD_ALIGN_LEN = SWITCH_OLD_ALIGN_LEN_;
     ref_vcf_               = ref_vcf;
@@ -197,7 +219,17 @@ class SeqStutterGenotyper : public Genotyper {
   double aln_trace_time() { return total_aln_trace_time_;  }
   double assembly_time()  { return total_assembly_time_;   }
 
-  bool genotype(int max_total_haplotypes, int max_flank_haplotypes, double min_flank_freq, std::ostream& logger);
+  // Predictive signals captured at the guard point (doc §1/§3). Valid only once genotype() has
+  // run far enough to reach the initial alignment pass; initial_num_alleles() stays -1 otherwise.
+  int          initial_num_alleles()   const { return initial_num_alleles_;   }
+  int          initial_max_hap_size()  const { return initial_max_hap_size_;  }
+  int          num_aligned_pools()     const { return num_aligned_pools_;     }
+  long         total_pooled_read_len() const { return total_pooled_read_len_; }
+  long         total_read_bp()         const { return total_read_bp_;         }
+  double       predicted_aln_work()    const { return predicted_aln_work_;    }
+  unsigned int num_reads()             const { return num_reads_;             }
+
+  bool genotype(int max_total_haplotypes, int max_flank_haplotypes, double min_flank_freq, double skip_aln_work_over, std::ostream& logger);
 
   /*
    * Recompute the stutter model(s) using the PCR artifacts obtained from the ML alignments
