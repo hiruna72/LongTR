@@ -554,6 +554,11 @@ void HapAligner::process_reads(const std::vector<Alignment>& alignments, int ini
     short_ = 1;
     }
   for (unsigned int i = 0; i < alignments.size(); i++){
+    // Wall-clock watchdog: bail out of the alignment loop once past the per-locus deadline.
+    if (wd_enabled_ && std::chrono::steady_clock::now() > wd_deadline_){
+      wd_aborted_ = true;
+      break;
+    }
     if (!realign_read[i]){
       prob_ptr += fw_haplotype_->num_combs();
       continue;

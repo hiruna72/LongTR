@@ -1,6 +1,7 @@
 #ifndef HAPLOTYPE_GENERATOR_H_
 #define HAPLOTYPE_GENERATOR_H_
 
+#include <chrono>
 #include <iostream>
 #include <map>
 #include <string>
@@ -32,6 +33,16 @@ class HaplotypeGenerator {
   std::string failure_msg_;
   int32_t min_aln_start_, max_aln_stop_;
   std::vector<HapBlock*> hap_blocks_;
+
+  // Wall-clock watchdog: poll during POA/clustering; aborts once past the per-locus deadline.
+  // wd_aborted_ is mutable so wd_expired() can flip it from the const POA methods (gen_candidate_seqs, poa, ...).
+  bool wd_enabled_ = false;
+  mutable bool wd_aborted_ = false;
+  std::chrono::steady_clock::time_point wd_deadline_;
+  bool wd_expired() const {
+    if (wd_enabled_ && std::chrono::steady_clock::now() > wd_deadline_){ wd_aborted_ = true; return true; }
+    return false;
+  }
 
   void trim(int ideal_min_length,
 	    int32_t& region_start, int32_t& region_end, std::vector<std::pair<std::string, bool>>& sequences) const;
@@ -82,6 +93,10 @@ class HaplotypeGenerator {
 			   bool log_alt, std::map<std::string, std::string>* admission_out);
 
   bool fuse_haplotype_blocks(const std::string& chrom_seq);
+
+  // Wall-clock watchdog hooks. set_deadline() shares the per-locus deadline; timed_out() reports abort.
+  void set_deadline(std::chrono::steady_clock::time_point deadline, bool enabled){ wd_deadline_ = deadline; wd_enabled_ = enabled; }
+  bool timed_out() const { return wd_aborted_; }
 
   const std::string& failure_msg(){ return failure_msg_; }
 

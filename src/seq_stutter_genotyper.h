@@ -2,6 +2,7 @@
 #define SEQ_STUTTER_GENOTYPER_H_
 
 #include <algorithm>
+#include <chrono>
 #include <iostream>
 #include <map>
 #include <math.h>
@@ -59,7 +60,7 @@ class SeqStutterGenotyper : public Genotyper {
   double total_aln_trace_time_;
   double total_assembly_time_;
 
-  // Predictive signals for the runtime guard (see doc/longtr_findings_threading_and_nhap.md §3).
+  // Predictive signals for the runtime guard.
   // Snapshotted once, just before the initial haplotype-alignment pass, so they describe the
   // *initial* alignment cost and are unaffected by later growth from flank reassembly.
   // Remain at the sentinel values below until record_predictive_signals() runs (i.e. the locus
@@ -73,9 +74,18 @@ class SeqStutterGenotyper : public Genotyper {
 
   // Allele visibility logging (--log-alt-alleles). Admission facts (reason + support counts) are
   // captured during candidate generation, keyed by the stored (padded) allele sequence, and emitted once
-  // per surviving ALT at VCF-writing time combined with the calling counts. See doc §4.
+  // per surviving ALT at VCF-writing time combined with the calling counts.
   bool log_alt_alleles_;
   std::map<std::string, std::string> allele_admission_;
+
+  // Wall-clock watchdog (--max-locus-sec). Deadline captured in the ctor so it also bounds POA
+  // (which runs in the ctor). A poll point aborts when over budget; genotype() logs WATCHDOG_TIMEOUT + no VCF.
+  bool watchdog_enabled_;
+  bool watchdog_aborted_;
+  std::string watchdog_phase_;      // "POA" | "ALIGN"
+  double locus_budget_sec_;
+  std::chrono::steady_clock::time_point locus_start_, locus_deadline_;
+  void log_watchdog_skip(std::ostream& logger);
 
   // Used to identify candidate haplotypes during flank reassembly
   int MIN_PATH_WEIGHT, MIN_KMER, MAX_KMER;
@@ -115,7 +125,7 @@ class SeqStutterGenotyper : public Genotyper {
   void calc_hap_aln_probs(std::vector<bool>& realign_to_haplotype, std::vector<bool>& realign_pool, std::vector<bool>& copy_read);
 
   // Snapshot the predictive alignment-cost signals (nhap, max hap length, pooled-read stats,
-  // and the derived work estimate) just before the initial alignment pass. See doc §1/§3.
+  // and the derived work estimate) just before the initial alignment pass.
   void record_predictive_signals();
 
   // Identify alleles present in stutter artifacts. Align each read to the new haplotypes
@@ -170,7 +180,7 @@ class SeqStutterGenotyper : public Genotyper {
   SeqStutterGenotyper(const RegionGroup& region_group, bool haploid, bool reassemble_flanks,
 		      std::vector<Alignment>& alignments, std::vector< std::vector<double> >& log_p1, std::vector< std::vector<double> >& log_p2, std::vector<int>& n_p1s, std::vector<int>& n_p2s,
 		      const std::vector<std::string>& sample_names, const std::string& chrom_seq,
-		      std::vector<StutterModel*>& stutter_models, VCF::VCFReader* ref_vcf, std::ostream& logger, bool skip_assembly_, int INDEL_FLANK_LEN_, int SWITCH_OLD_ALIGN_LEN_, std::vector<float> alignment_parameters_, int log_alt_alleles_arg): Genotyper(haploid, sample_names, log_p1, log_p2){
+		      std::vector<StutterModel*>& stutter_models, VCF::VCFReader* ref_vcf, std::ostream& logger, bool skip_assembly_, int INDEL_FLANK_LEN_, int SWITCH_OLD_ALIGN_LEN_, std::vector<float> alignment_parameters_, int log_alt_alleles_arg, double max_locus_sec): Genotyper(haploid, sample_names, log_p1, log_p2){
     region_group_          = region_group.copy();
     alns_                  = alignments;
     seed_positions_        = NULL;
@@ -198,6 +208,13 @@ class SeqStutterGenotyper : public Genotyper {
     SWITCH_OLD_ALIGN_LEN = SWITCH_OLD_ALIGN_LEN_;
     ref_vcf_               = ref_vcf;
     log_alt_alleles_     = log_alt_alleles_arg;
+    // Wall-clock watchdog: capture the deadline BEFORE init() so it also bounds POA (which runs in init()).
+    watchdog_enabled_      = (max_locus_sec > 0);
+    watchdog_aborted_      = false;
+    watchdog_phase_        = "";
+    locus_budget_sec_      = max_locus_sec;
+    locus_start_           = std::chrono::steady_clock::now();
+    locus_deadline_        = locus_start_ + std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(max_locus_sec > 0 ? max_locus_sec : 0));
     assert(num_reads_ == alns_.size());
     init(stutter_models, chrom_seq, logger);
     skip_assembly = skip_assembly_;
@@ -226,7 +243,7 @@ class SeqStutterGenotyper : public Genotyper {
   double aln_trace_time() { return total_aln_trace_time_;  }
   double assembly_time()  { return total_assembly_time_;   }
 
-  // Predictive signals captured at the guard point (doc §1/§3). Valid only once genotype() has
+  // Predictive signals captured at the guard point. Valid only once genotype() has
   // run far enough to reach the initial alignment pass; initial_num_alleles() stays -1 otherwise.
   int          initial_num_alleles()   const { return initial_num_alleles_;   }
   int          initial_max_hap_size()  const { return initial_max_hap_size_;  }

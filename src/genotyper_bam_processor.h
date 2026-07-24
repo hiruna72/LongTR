@@ -111,6 +111,7 @@ public:
     MAX_TOTAL_HAPLOTYPES   = 1000;
     ALN_WORK_MEDIAN        = 6.3e6;
     SKIP_ALN_WORK_FACTOR   = -1;
+    MAX_LOCUS_SEC          = -1;
     LOG_LOCUS_SIGNALS      = 0;
     LOG_ALT_ALLELES      = 0;
     MAX_FLANK_HAPLOTYPES   = 4;
@@ -255,6 +256,7 @@ public:
   int MAX_TOTAL_HAPLOTYPES;
   double ALN_WORK_MEDIAN;      // Reference median alignment work (M) for the work-factor skip guard. Default from a reference run.
   double SKIP_ALN_WORK_FACTOR; // Skip (and log) any locus whose predicted alignment work exceeds N*M (N = this). <=0 disables.
+  double MAX_LOCUS_SEC;        // Wall-clock watchdog: per-locus genotyping budget (POA + alignment) in seconds; abort+skip over-budget loci. <=0 disables.
   int LOG_LOCUS_SIGNALS;      // If set, emit per-locus predictive signals (LOCUS_SIGNALS line + human-readable) for k calibration. Default off.
   int LOG_ALT_ALLELES;      // If set, emit one ALT_ALLELE line per surviving ALT (admission reason/counts + calling support). Default off.
   int INDEL_FLANK_LEN;

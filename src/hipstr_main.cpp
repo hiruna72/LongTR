@@ -89,6 +89,8 @@ void print_usage(int def_mdist, int def_min_reads, int def_max_reads, int def_ma
 	    << "\t" << "                                      "  << "\t" << " reference run; used with --skip-aln-work-factor (Default = 6.3e6)" << "\n"
 	    << "\t" << "--skip-aln-work-factor <N>            "  << "\t" << "Skip (and log a SKIP_LOCUS line for) any locus whose predicted alignment work" << "\n"
 	    << "\t" << "                                      "  << "\t" << " exceeds N times the median M, i.e. work > N*M. System-independent (Default = off)" << "\n"
+	    << "\t" << "--max-locus-sec <sec>                 "  << "\t" << "Wall-clock watchdog: abort+skip (SKIP_LOCUS reason=WATCHDOG_TIMEOUT) any locus" << "\n"
+	    << "\t" << "                                      "  << "\t" << " whose genotyping (POA + alignment) exceeds this many seconds (Default = off)" << "\n"
 	    << "\t" << "--log-locus-signals                   "  << "\t" << "Emit a machine-parseable LOCUS_SIGNALS line per locus (nhap, read bp," << "\n"
 	    << "\t" << "                                      "  << "\t" << " max_hap_len, work, hap_build_sec, hap_aln_sec) for k calibration (Default = off)" << "\n"
 	    << "\t" << "--log-alt-alleles                   "  << "\t" << "Emit one ALT_ALLELE line per VCF ALT with its admission reason" << "\n"
@@ -204,6 +206,7 @@ void parse_command_line_args(int argc, char** argv,
     {"alignment-params", required_argument, 0, 'P'},
     {"aln-work-median", required_argument, 0, 1002},
     {"skip-aln-work-factor", required_argument, 0, 1003},
+    {"max-locus-sec", required_argument, 0, 1004},
     {"log-locus-signals",  no_argument, &(bam_processor.LOG_LOCUS_SIGNALS), 1},
     {"log-alt-alleles",  no_argument, &(bam_processor.LOG_ALT_ALLELES), 1},
     {0, 0, 0, 0}
@@ -276,6 +279,9 @@ void parse_command_line_args(int argc, char** argv,
       break;
     case 1003:
       bam_processor.SKIP_ALN_WORK_FACTOR = atof(optarg);
+      break;
+    case 1004:
+      bam_processor.MAX_LOCUS_SEC = atof(optarg);
       break;
     case 'l':
       log_file = std::string(optarg);

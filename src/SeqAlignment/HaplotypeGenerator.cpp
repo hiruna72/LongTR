@@ -173,6 +173,7 @@ void HaplotypeGenerator::poa(const std::vector<std::string>& seqs, std::string& 
     //std::cout << "total " << seqs.size() << std::endl;
     if (seqs.size() < cluster_size_limit){
         for (const auto& seq: seqs) {
+            if (wd_expired()) return; // wall-clock watchdog
             auto alignment = alignment_engine->Align(seq, graph);
             graph.AddAlignment(alignment, seq);
 
@@ -192,6 +193,7 @@ void HaplotypeGenerator::poa(const std::vector<std::string>& seqs, std::string& 
             }
         }
         for (const auto& index: indices) {
+            if (wd_expired()) return; // wall-clock watchdog
             auto alignment = alignment_engine->Align(seqs[index], graph);
             graph.AddAlignment(alignment, seqs[index]);
         }
@@ -240,6 +242,7 @@ bool HaplotypeGenerator::greedy_clustering(const std::vector<std::string>& seqs,
   centroids.push_back(seqs[0]); // first centroid is the first sequence
   clusters[seqs[0]].push_back(seqs[0]);;
   for (int i = 1; i < seqs.size(); i++) {
+    if (wd_expired()) return false; // wall-clock watchdog
     int min_score = INT_MAX;
     int min_cntr = -1;
     for (int j = 0; j < centroids.size(); j++) {
@@ -273,6 +276,7 @@ bool HaplotypeGenerator::merge_clusters(const std::vector<std::string>& new_cent
     bool updated = false;
     //std::cout << "mergingggg" << std::endl;
     for (int i = 0; i < new_centroids.size(); i++){
+        if (wd_expired()) return updated; // wall-clock watchdog
         //int T = std::min(static_cast<int>(0.1 * new_centroids[i].size()), threshold); // TODO make it constant
         int T = threshold;
         for (int j = 1; j < new_centroids.size(); j++){
@@ -446,9 +450,11 @@ void HaplotypeGenerator::gen_candidate_seqs(const std::string& ref_seq, int idea
         bool finished = false;
         for (auto t:thresholds){
             //std::cout << t << std::endl;
+            if (wd_expired()) return; // wall-clock watchdog
             if (finished == true) break;
             std::map<std::string, std::vector<std::string>> clusters;
             bool clusters_done = greedy_clustering(uniqueStrings, clusters, t);
+            if (wd_expired()) return; // greedy_clustering may have hit the deadline (returns false on timeout)
             if (clusters_done == false) continue;
 
 //            for  (auto c: clusters){
@@ -460,6 +466,7 @@ void HaplotypeGenerator::gen_candidate_seqs(const std::string& ref_seq, int idea
             // sequences to partial order alignment of strings in each cluster
             // continue until convergence
             while (not_converged) {
+                 if (wd_expired()) return; // wall-clock watchdog
                  std::map<std::string, std::vector<std::string>> updated_clusters;
                  std::vector<std::string> new_centroids;
                  for (auto iter = clusters.begin(); iter != clusters.end(); iter++) {
@@ -624,6 +631,7 @@ bool HaplotypeGenerator::add_haplotype_block(const Region& region, const std::st
   std::vector<std::pair<std::string, bool>> sequences;
   int ideal_min_length = 3*region.period(); // Would ideally have at least 3 repeat units in each allele after trimming
   gen_candidate_seqs(ref_seq, ideal_min_length, alignments, padded_vcf_alleles, region_start, region_end, sequences, log_alt, admission_out);
+  if (timed_out()){ failure_msg_ = "Watchdog timeout during candidate haplotype generation (POA)"; return false; } //
 
   // Ensure that the new haplotype block won't overlap with previous blocks
   if (!hap_blocks_.empty() && (region_start < hap_blocks_.back()->end() + MIN_BLOCK_SPACING)){

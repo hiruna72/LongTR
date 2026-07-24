@@ -292,7 +292,7 @@ void GenotyperBamProcessor::analyze_reads_and_phasing(std::vector<BamAlnList>& a
 		     filt_log_p2s, n_p1s, n_p2s, left_alignments);
     bool run_assembly = (REQUIRE_SPANNING == 0);
     seq_genotyper = new SeqStutterGenotyper(region_group, haploid, 1, left_alignments, filt_log_p1s, filt_log_p2s, n_p1s, n_p2s, rg_names, chrom_seq,
-					    stutter_models, ref_vcf_, selective_logger(), skip_assembly_, INDEL_FLANK_LEN, SWITCH_OLD_ALIGN_LEN, alignment_parameters_, LOG_ALT_ALLELES);
+					    stutter_models, ref_vcf_, selective_logger(), skip_assembly_, INDEL_FLANK_LEN, SWITCH_OLD_ALIGN_LEN, alignment_parameters_, LOG_ALT_ALLELES, MAX_LOCUS_SEC);
     if (seq_genotyper->genotype(MAX_TOTAL_HAPLOTYPES, MAX_FLANK_HAPLOTYPES, MIN_FLANK_FREQ, ALN_WORK_MEDIAN, SKIP_ALN_WORK_FACTOR, selective_logger())) {
       bool pass = true;
       // If appropriate, recalculate the stutter model using the haplotype ML alignments,
@@ -326,7 +326,7 @@ void GenotyperBamProcessor::analyze_reads_and_phasing(std::vector<BamAlnList>& a
 			 << "\t" << " Haplotype generation  = "  << seq_genotyper->hap_build_time()  << " seconds\n"
 			 << "\t" << " Haplotype alignment   = "  << seq_genotyper->hap_aln_time()    << " seconds\n";
 
-      // Predictive alignment/generation-cost signals (doc §1/§3), for calibration. Behind --log-locus-signals
+      // Predictive alignment/generation-cost signals, for calibration. Behind --log-locus-signals
       // (default off) to keep production logs clean. Emitted human-readably and as one machine-parseable
       // LOCUS_SIGNALS line: alignment k = hap_aln_sec / work; POA cost is calibrated vs hap_build_sec /
       // (total_read_bp, max_hap_len, ...). (SKIP_LOCUS, the guard audit trail, is always emitted, in genotype().)
