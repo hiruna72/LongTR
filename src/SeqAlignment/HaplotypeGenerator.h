@@ -33,6 +33,7 @@ class HaplotypeGenerator {
   std::string failure_msg_;
   int32_t min_aln_start_, max_aln_stop_;
   std::vector<HapBlock*> hap_blocks_;
+  bool blocks_released_ = false; // True once get_haplotype_blocks() hands ownership to the caller (genotyper)
 
   // Wall-clock watchdog: poll during POA/clustering; aborts once past the per-locus deadline.
   // wd_aborted_ is mutable so wd_expired() can flip it from the const POA methods (gen_candidate_seqs, poa, ...).
@@ -85,6 +86,15 @@ class HaplotypeGenerator {
     max_aln_stop_            = max_aln_stop;
   }
 
+  ~HaplotypeGenerator(){
+    // Free any haplotype blocks we still own. On the success path they are handed to the genotyper via
+    // get_haplotype_blocks() (which sets blocks_released_) and freed by its destructor; on any failure
+    // path ownership was never transferred, so we free them here to avoid leaking on build failure.
+    if (!blocks_released_)
+      for (unsigned int i = 0; i < hap_blocks_.size(); i++)
+        delete hap_blocks_[i];
+  }
+
   bool add_vcf_haplotype_block(int32_t pos, const std::string& chrom_seq,
 			       const std::vector<std::string>& vcf_alleles, const StutterModel* stutter_model);
 
@@ -100,9 +110,10 @@ class HaplotypeGenerator {
 
   const std::string& failure_msg(){ return failure_msg_; }
 
-  const std::vector<HapBlock*> get_haplotype_blocks() const {
+  const std::vector<HapBlock*> get_haplotype_blocks() {
     if (!finished_)
       printErrorAndDie("Haplotype blocks are not ready for downstream use");
+    blocks_released_ = true; // ownership transferred to the caller; our destructor must not free these
     return hap_blocks_;
   }
 };
