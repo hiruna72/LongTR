@@ -236,7 +236,7 @@ class SeqStutterGenotyper : public Genotyper {
   double       predicted_aln_work()    const { return predicted_aln_work_;    }
   unsigned int num_reads()             const { return num_reads_;             }
 
-  bool genotype(int max_total_haplotypes, int max_flank_haplotypes, double min_flank_freq, double skip_aln_work_over, std::ostream& logger);
+  bool genotype(int max_total_haplotypes, int max_flank_haplotypes, double min_flank_freq, double aln_work_median, double skip_aln_work_factor, std::ostream& logger);
 
   /*
    * Recompute the stutter model(s) using the PCR artifacts obtained from the ML alignments

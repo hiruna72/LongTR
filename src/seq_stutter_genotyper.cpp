@@ -620,7 +620,7 @@ bool SeqStutterGenotyper::id_and_align_to_stutter_alleles(int max_total_haplotyp
 }
 
 
-bool SeqStutterGenotyper::genotype(int max_total_haplotypes, int max_flank_haplotypes, double min_flank_freq, double skip_aln_work_over, std::ostream& logger){
+bool SeqStutterGenotyper::genotype(int max_total_haplotypes, int max_flank_haplotypes, double min_flank_freq, double aln_work_median, double skip_aln_work_factor, std::ostream& logger){
 	// Unsuccessful initialization. May be due to
 	// 1) Failing to find the corresponding alleles in the VCF (if one has been provided)
 	// 2) Large deletion extending past STR
@@ -655,20 +655,25 @@ bool SeqStutterGenotyper::genotype(int max_total_haplotypes, int max_flank_haplo
 	// Placed here (after pooling, before the first alignment) = the exact guard insertion point (doc §3).
 	record_predictive_signals();
 
-	// Temporary calibration/skip knob (NOT the full runtime guard yet): skip a locus whose predicted
-	// alignment work exceeds --skip-aln-work-over (work = pooled_read_bp * nhap * max_hap_len; catches
-	// monsters that are cheap in nhap but expensive in read/allele length — nhap alone misses them, and the
-	// hard nhap ceiling is already handled by --max-haps). Threshold <=0 disables. Predictive signals are
-	// recorded just above, so a skipped locus still emits its LOCUS_SIGNALS / work line for k calibration.
+	// Runtime skip guard (system-independent form): skip a locus whose predicted alignment work exceeds
+	// --skip-aln-work-factor (N) times --aln-work-median (M), i.e. work > N*M. work = pooled_read_bp * nhap
+	// * max_hap_len is a pure DP-cell count (hardware-independent), and M is the median work of a reference
+	// run, so the decision is portable across machines/cohorts. Catches monsters that are cheap in nhap but
+	// expensive in read/allele length (nhap alone misses them; --max-haps still caps nhap outright). N<=0
+	// disables. Predictive signals are recorded just above, so a skipped locus still emits its work signals.
 	// Skipping returns false => the caller writes no VCF record and the alignment loop never runs.
-	if (skip_aln_work_over > 0 && predicted_aln_work_ > skip_aln_work_over){
+	// (A wall-clock watchdog is planned as the guaranteed backstop for the tail this predictor under-shoots.)
+	double work_threshold = skip_aln_work_factor * aln_work_median;
+	if (skip_aln_work_factor > 0 && aln_work_median > 0 && predicted_aln_work_ > work_threshold){
 		logger << "SKIP_LOCUS"
-		       << "\treason=WORK_SKIP"
+		       << "\treason=WORK_FACTOR"
 		       << "\tregion="         << region_group_->chrom() << ":" << region_group_->start() << "-" << region_group_->stop()
 		       << "\tbed_len="        << (region_group_->stop() - region_group_->start())
 		       << "\tnhap="           << num_alleles_
 		       << "\twork="           << predicted_aln_work_
-		       << "\twork_threshold=" << skip_aln_work_over
+		       << "\twork_median="    << aln_work_median
+		       << "\twork_factor="    << skip_aln_work_factor
+		       << "\twork_threshold=" << work_threshold
 		       << "\tpools="          << num_aligned_pools_
 		       << "\treads="          << num_reads_
 		       << "\tmax_hap_len="    << initial_max_hap_size_
