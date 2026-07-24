@@ -5,7 +5,9 @@
 ## Default compilation flags.
 ## Override with:
 ##   make CXXFLAGS=XXXXX
-CXXFLAGS= -O3 -g -D__STDC_LIMIT_MACROS -D_FILE_OFFSET_BITS=64 -std=c++0x -DMACOSX -pthread
+## -include cstdint makes fixed-width integer types (int32_t, uint32_t, ...) available
+## on strict modern compilers (e.g. gcc 13+), which no longer pull them in transitively.
+CXXFLAGS= -O3 -g -D__STDC_LIMIT_MACROS -D_FILE_OFFSET_BITS=64 -std=c++0x -DMACOSX -pthread -include cstdint
 
 ## To create a static distribution file, run:
 ##   make static-dist
