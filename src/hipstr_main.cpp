@@ -89,6 +89,8 @@ void print_usage(int def_mdist, int def_min_reads, int def_max_reads, int def_ma
 	    << "\t" << "                                      "  << "\t" << " work (pooled_read_bp x nhap x max_hap_len) exceeds this (Default = off)" << "\n"
 	    << "\t" << "--log-locus-signals                   "  << "\t" << "Emit a machine-parseable LOCUS_SIGNALS line per locus (nhap, read bp," << "\n"
 	    << "\t" << "                                      "  << "\t" << " max_hap_len, work, hap_build_sec, hap_aln_sec) for k calibration (Default = off)" << "\n"
+	    << "\t" << "--log-alt-alleles                   "  << "\t" << "Emit one ALT_ALLELE line per VCF ALT with its admission reason" << "\n"
+	    << "\t" << "                                      "  << "\t" << " (STRONG/AGGREGATE/VCF) + support and calling counts (Default = off)" << "\n"
 	    << "\t" << "--max-hap-flanks <max_flanks>         "  << "\t" << "Maximum allowable non-reference flanking sequences for an TR (Default = " << def_max_flanks << ")" << "\n"
 	    << "\t" << "                                      "  << "\t" << " Loci with more candidate flanks will not be genotyped"                              << "\n"
 	    << "\t" << "--min-flank-freq <min_freq>           "  << "\t" << "Filter a flank if its fraction of supporting samples < MIN_FREQ (Default = " << def_min_flank_freq  << ")" << "\n" << "\n"
@@ -200,6 +202,7 @@ void parse_command_line_args(int argc, char** argv,
     {"alignment-params", required_argument, 0, 'P'},
     {"skip-aln-work-over", required_argument, 0, 1002},
     {"log-locus-signals",  no_argument, &(bam_processor.LOG_LOCUS_SIGNALS), 1},
+    {"log-alt-alleles",  no_argument, &(bam_processor.LOG_ALT_ALLELES), 1},
     {0, 0, 0, 0}
   };
 

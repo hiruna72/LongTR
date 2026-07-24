@@ -2,6 +2,7 @@
 #define HAPLOTYPE_GENERATOR_H_
 
 #include <iostream>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -47,7 +48,8 @@ class HaplotypeGenerator {
 
   void gen_candidate_seqs(const std::string& ref_seq, int ideal_min_length,
 			  const std::vector< std::vector<Alignment> >& alignments, const std::vector<std::string>& vcf_alleles,
-			  int32_t& region_start, int32_t& region_end, std::vector<std::pair<std::string, bool>>& sequences) const;
+			  int32_t& region_start, int32_t& region_end, std::vector<std::pair<std::string, bool>>& sequences,
+			  bool log_alt, std::map<std::string, std::string>* admission_out) const;
 
   void get_aln_bounds(const std::vector< std::vector<Alignment> >& alignments,
 		      int32_t& min_aln_start, int32_t& max_aln_stop) const;
@@ -76,7 +78,8 @@ class HaplotypeGenerator {
 			       const std::vector<std::string>& vcf_alleles, const StutterModel* stutter_model);
 
   bool add_haplotype_block(const Region& region, const std::string& chrom_seq, const std::vector< std::vector<Alignment> >& alignments,
-			   const std::vector<std::string>& vcf_alleles, const StutterModel* stutter_model);
+			   const std::vector<std::string>& vcf_alleles, const StutterModel* stutter_model,
+			   bool log_alt, std::map<std::string, std::string>* admission_out);
 
   bool fuse_haplotype_blocks(const std::string& chrom_seq);
 

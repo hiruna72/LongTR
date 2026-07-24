@@ -71,6 +71,12 @@ class SeqStutterGenotyper : public Genotyper {
   long   total_read_bp_;          // Sum of raw input-read lengths (pre-POA/pre-pool; predicts POA generation cost)
   double predicted_aln_work_;     // work = total_pooled_read_len_ * initial_num_alleles_ * initial_max_hap_size_
 
+  // Allele visibility logging (--log-alt-alleles). Admission facts (reason + support counts) are
+  // captured during candidate generation, keyed by the stored (padded) allele sequence, and emitted once
+  // per surviving ALT at VCF-writing time combined with the calling counts. See doc §4.
+  bool log_alt_alleles_;
+  std::map<std::string, std::string> allele_admission_;
+
   // Used to identify candidate haplotypes during flank reassembly
   int MIN_PATH_WEIGHT, MIN_KMER, MAX_KMER;
 
@@ -164,7 +170,7 @@ class SeqStutterGenotyper : public Genotyper {
   SeqStutterGenotyper(const RegionGroup& region_group, bool haploid, bool reassemble_flanks,
 		      std::vector<Alignment>& alignments, std::vector< std::vector<double> >& log_p1, std::vector< std::vector<double> >& log_p2, std::vector<int>& n_p1s, std::vector<int>& n_p2s,
 		      const std::vector<std::string>& sample_names, const std::string& chrom_seq,
-		      std::vector<StutterModel*>& stutter_models, VCF::VCFReader* ref_vcf, std::ostream& logger, bool skip_assembly_, int INDEL_FLANK_LEN_, int SWITCH_OLD_ALIGN_LEN_, std::vector<float> alignment_parameters_): Genotyper(haploid, sample_names, log_p1, log_p2){
+		      std::vector<StutterModel*>& stutter_models, VCF::VCFReader* ref_vcf, std::ostream& logger, bool skip_assembly_, int INDEL_FLANK_LEN_, int SWITCH_OLD_ALIGN_LEN_, std::vector<float> alignment_parameters_, int log_alt_alleles_arg): Genotyper(haploid, sample_names, log_p1, log_p2){
     region_group_          = region_group.copy();
     alns_                  = alignments;
     seed_positions_        = NULL;
@@ -191,6 +197,7 @@ class SeqStutterGenotyper : public Genotyper {
     INDEL_FLANK_LEN = INDEL_FLANK_LEN_;
     SWITCH_OLD_ALIGN_LEN = SWITCH_OLD_ALIGN_LEN_;
     ref_vcf_               = ref_vcf;
+    log_alt_alleles_     = log_alt_alleles_arg;
     assert(num_reads_ == alns_.size());
     init(stutter_models, chrom_seq, logger);
     skip_assembly = skip_assembly_;

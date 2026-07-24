@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <random>
+#include <sstream>
 
 #include "spoa/spoa.hpp"
 #include "HaplotypeGenerator.h"
@@ -294,11 +295,17 @@ bool HaplotypeGenerator::merge_clusters(const std::vector<std::string>& new_cent
 
 void HaplotypeGenerator::gen_candidate_seqs(const std::string& ref_seq, int ideal_min_length,
 					    const std::vector< std::vector<Alignment> >& alignments, const std::vector<std::string>& vcf_alleles,
-					    int32_t& region_start, int32_t& region_end, std::vector<std::pair<std::string, bool>>& sequences) const {
+					    int32_t& region_start, int32_t& region_end, std::vector<std::pair<std::string, bool>>& sequences,
+					    bool log_alt, std::map<std::string, std::string>* admission_out) const {
   assert(sequences.empty());
   std::map<std::string, double> sample_counts;
   std::map<std::string, int> read_counts, must_inc;
   int tot_reads = 0, tot_samples = 0;
+
+  // (--log-alt-alleles) admission tags keyed by the PRE-trim candidate sequence. trim() below clips
+  // shared flanks in place (preserving order), so we remap these onto the post-trim sequences afterward
+  // and write them into admission_out, whose keys then match the stored HapBlock sequences read at VCF time.
+  std::map<std::string, std::string> admit_by_pretrim;
 
   // Determine the number of reads and number of samples supporting each allele
   for (unsigned int i = 0; i < alignments.size(); i++){
@@ -330,6 +337,19 @@ void HaplotypeGenerator::gen_candidate_seqs(const std::string& ref_seq, int idea
   int ref_index = -1;
   for (unsigned int i = 0; i < vcf_alleles.size(); i++){
     sequences.push_back(std::pair<std::string,bool>(vcf_alleles[i],false));
+    if (log_alt && admission_out != NULL && vcf_alleles[i] != ref_seq){
+      auto sc = sample_counts.find(vcf_alleles[i]);
+      auto rc = read_counts.find(vcf_alleles[i]);
+      auto mi = must_inc.find(vcf_alleles[i]);
+      std::ostringstream tag;
+      tag << "\treason=VCF"
+          << "\tread_count="   << (rc != read_counts.end()   ? rc->second : 0)
+          << "\tsample_count=" << (sc != sample_counts.end()  ? sc->second : 0.0)
+          << "\tmust_inc="     << (mi != must_inc.end()       ? mi->second : 0)
+          << "\ttot_reads="    << tot_reads
+          << "\ttot_samples="  << tot_samples;
+      admit_by_pretrim[vcf_alleles[i]] = tag.str();
+    }
     auto iter_1 = sample_counts.find(vcf_alleles[i]);
     if (iter_1 != sample_counts.end()){
       sample_counts.erase(iter_1);
@@ -347,6 +367,16 @@ void HaplotypeGenerator::gen_candidate_seqs(const std::string& ref_seq, int idea
     if (iter->second >= MIN_STRONG_SAMPLES){
       auto iter_1 = sample_counts.find(iter->first);
       auto iter_2 = read_counts.find(iter->first);
+      if (log_alt && admission_out != NULL){
+        std::ostringstream tag;
+        tag << "\treason=STRONG"
+            << "\tread_count="   << iter_2->second
+            << "\tsample_count=" << iter_1->second
+            << "\tmust_inc="     << iter->second
+            << "\ttot_reads="    << tot_reads
+            << "\ttot_samples="  << tot_samples;
+        admit_by_pretrim[iter->first] = tag.str();
+      }
       sample_counts.erase(iter_1);
       read_counts.erase(iter_2);
       sequences.push_back(std::pair<std::string,bool>(iter->first,false));
@@ -358,6 +388,16 @@ void HaplotypeGenerator::gen_candidate_seqs(const std::string& ref_seq, int idea
   // Identify additional alleles satisfying thresholds
   for (auto iter = sample_counts.begin(); iter != sample_counts.end(); iter++){
     if (iter->second > MIN_FRAC_SAMPLES*tot_samples*2 || read_counts[iter->first] > MIN_FRAC_READS*tot_reads*2){
+      if (log_alt && admission_out != NULL){
+        std::ostringstream tag;
+        tag << "\treason=AGGREGATE"
+            << "\tread_count="   << read_counts[iter->first]
+            << "\tsample_count=" << iter->second
+            << "\tmust_inc=0"
+            << "\ttot_reads="    << tot_reads
+            << "\ttot_samples="  << tot_samples;
+        admit_by_pretrim[iter->first] = tag.str();
+      }
       sequences.push_back(std::pair<std::string,bool>(iter->first,false));
       if (ref_index == -1 && (iter->first.compare(ref_seq) == 0))
 	ref_index = sequences.size()-1;
@@ -457,6 +497,12 @@ void HaplotypeGenerator::gen_candidate_seqs(const std::string& ref_seq, int idea
                     if (std::find(sequences.begin(), sequences.end(), std::pair<std::string,bool>(iter->first,false)) == sequences.end() &
                     std::find(sequences.begin(), sequences.end(), std::pair<std::string,bool>(iter->first,true)) == sequences.end()){ // if the centeroid is not already in the candidate haplotypes
                         potential_seqs.push_back(std::pair<std::string,bool>(iter->first,true));
+                        if (log_alt && admission_out != NULL){
+                          std::ostringstream tag;
+                          tag << "\treason=INEXACT_POA\tread_count=" << sum_per_cluster
+                              << "\tsample_count=0\tmust_inc=0\ttot_reads=" << tot_reads << "\ttot_samples=" << tot_samples;
+                          admit_by_pretrim[iter->first] = tag.str();
+                        }
                     }
              }
            }
@@ -476,9 +522,24 @@ void HaplotypeGenerator::gen_candidate_seqs(const std::string& ref_seq, int idea
 
   //for (auto seq:sequences) std::cout << seq.first.size() << std::endl;
 
+  // (--log-alt-alleles) snapshot pre-trim sequences by position so we can remap admission tags after
+  // trim() rewrites the sequence strings in place (order and count are preserved by trim).
+  std::vector<std::string> pretrim_seqs;
+  if (log_alt && admission_out != NULL)
+    for (unsigned int i = 0; i < sequences.size(); i++)
+      pretrim_seqs.push_back(sequences[i].first);
+
   // Clip identical regions
   trim(ideal_min_length, region_start, region_end, sequences);
 
+  // Remap admission tags from pre-trim -> post-trim sequences, keying admission_out by the post-trim
+  // sequence (== what the HapBlock stores and write_vcf_record looks up via block->get_seq()).
+  if (log_alt && admission_out != NULL)
+    for (unsigned int i = 0; i < sequences.size() && i < pretrim_seqs.size(); i++){
+      auto it = admit_by_pretrim.find(pretrim_seqs[i]);
+      if (it != admit_by_pretrim.end())
+        (*admission_out)[sequences[i].first] = it->second;
+    }
 }
 
 void HaplotypeGenerator::get_aln_bounds(const std::vector< std::vector<Alignment> >& alignments,
@@ -525,7 +586,8 @@ bool HaplotypeGenerator::add_vcf_haplotype_block(int32_t pos, const std::string&
 }
 
 bool HaplotypeGenerator::add_haplotype_block(const Region& region, const std::string& chrom_seq, const std::vector< std::vector<Alignment> >& alignments,
-					     const std::vector<std::string>& vcf_alleles, const StutterModel* stutter_model){
+					     const std::vector<std::string>& vcf_alleles, const StutterModel* stutter_model,
+					     bool log_alt, std::map<std::string, std::string>* admission_out){
   if (!failure_msg_.empty())
     printErrorAndDie("Unable to add a haplotype block, as a previous addition failed");
 
@@ -561,7 +623,7 @@ bool HaplotypeGenerator::add_haplotype_block(const Region& region, const std::st
   // Extract candidate STR sequences (using some padding to ensure indels near STR ends are included)
   std::vector<std::pair<std::string, bool>> sequences;
   int ideal_min_length = 3*region.period(); // Would ideally have at least 3 repeat units in each allele after trimming
-  gen_candidate_seqs(ref_seq, ideal_min_length, alignments, padded_vcf_alleles, region_start, region_end, sequences);
+  gen_candidate_seqs(ref_seq, ideal_min_length, alignments, padded_vcf_alleles, region_start, region_end, sequences, log_alt, admission_out);
 
   // Ensure that the new haplotype block won't overlap with previous blocks
   if (!hap_blocks_.empty() && (region_start < hap_blocks_.back()->end() + MIN_BLOCK_SPACING)){

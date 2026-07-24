@@ -453,7 +453,7 @@ bool SeqStutterGenotyper::build_haplotype(const std::string& chrom_seq, std::vec
 		}
 		else {
 			// Add the haplotype block in which alleles are derived from the alignments
-			if (!hap_generator.add_haplotype_block(regions[region_index], chrom_seq, gen_hap_alns, vcf_alleles, stutter_models[region_index])){
+			if (!hap_generator.add_haplotype_block(regions[region_index], chrom_seq, gen_hap_alns, vcf_alleles, stutter_models[region_index], log_alt_alleles_, &allele_admission_)){
 				logger << "Haplotype construction failed: " << hap_generator.failure_msg() << std::endl;
 				success = false;
 				break;
@@ -986,6 +986,7 @@ void SeqStutterGenotyper::write_vcf_record(const std::vector<std::string>& sampl
 	std::vector<int> unique_reads_hap_one(num_samples_, 0), unique_reads_hap_two(num_samples_, 0);
 	std::vector<int> rv_unique_reads_hap_one(num_samples_, 0), rv_unique_reads_hap_two(num_samples_, 0);
 	std::vector< std::vector<int> > bps_per_sample(num_samples_), ml_bps_per_sample(num_samples_);
+	std::vector<int> ml_reads_per_allele(num_variants, 0); // For --log-alt-alleles: # reads whose ML alignment maps to each allele
 	std::vector< std::vector<double> > log_read_phases(num_samples_);
 	std::vector<AlnList> max_LL_alns_strand_one(num_samples_), left_alns_strand_one(num_samples_);
 	std::vector<AlnList> max_LL_alns_strand_two(num_samples_), left_alns_strand_two(num_samples_);
@@ -1028,6 +1029,8 @@ void SeqStutterGenotyper::write_vcf_record(const std::vector<std::string>& sampl
 		// Retrace alignment and ensure that it's of sufficient quality
 		double trace_start = clock();
 		int best_hap = (read_strand == 0 ? hap_a : hap_b);
+		if (log_alt_alleles_ && hap_to_allele[best_hap] >= 0 && hap_to_allele[best_hap] < num_variants)
+			ml_reads_per_allele[hap_to_allele[best_hap]]++; // ML-supporting read count per allele (--log-alt-alleles)
 		AlignmentTrace* trace = NULL;
 		if (SWITCH_OLD_ALIGN_LEN){
 		    std::pair<int,int> trace_key(pool_index_[read_index], best_hap);
@@ -1124,6 +1127,41 @@ void SeqStutterGenotyper::write_vcf_record(const std::vector<std::string>& sampl
 	// Determine an ordering for the alleles, in which they're sorted by allele length
 	std::vector<int> old_to_new, new_to_old;
 	reorder_alleles(alleles, old_to_new, new_to_old);
+
+	// Allele visibility (--log-alt-alleles): one ALT_ALLELE line per surviving ALT, combining its
+	// admission reason/support (captured during candidate generation, keyed by the stored allele sequence)
+	// with the calling counts. allele_idx == the VCF ALT number (via new_to_old) so it maps 1:1 to ALT/GT. See doc §4.
+	if (log_alt_alleles_){
+		HapBlock* jblock = haplotype_->get_block(hap_block_index);
+		std::vector<int> called_samples_per_allele(num_variants, 0);
+		int si = 0;
+		for (auto git = gts.begin(); git != gts.end(); ++git, ++si){
+			if (num_aligned_reads[si] > 0 && call_sample_[si].empty()){
+				if (git->first  >= 0 && git->first  < num_variants) called_samples_per_allele[git->first]++;
+				if (git->second >= 0 && git->second < num_variants) called_samples_per_allele[git->second]++;
+			}
+		}
+		for (int i = 1; i < (int)alleles.size(); i++){
+			int old_idx = new_to_old[i];
+			std::string raw_seq = jblock->get_seq(old_idx);
+			auto ait = allele_admission_.find(raw_seq);
+			std::string admit_tag = (ait != allele_admission_.end() ? ait->second
+			                          : std::string("\treason=NA\tread_count=0\tsample_count=0\tmust_inc=0\ttot_reads=0\ttot_samples=0"));
+			int cs = (old_idx < num_variants ? called_samples_per_allele[old_idx] : 0);
+			int mr = (old_idx < num_variants ? ml_reads_per_allele[old_idx]       : 0);
+			logger << "ALT_ALLELE"
+			       << "\tregion="         << region.chrom() << ":" << region.start() << "-" << region.stop()
+			       << "\tallele_idx="     << i
+			       << "\tbp_diff="        << allele_bp_diffs[old_idx]
+			       << "\tallele_len="     << alleles[old_idx].size()
+			       << admit_tag
+			       << "\tcalled_samples=" << cs
+			       << "\tml_reads="       << mr
+			       << "\tcalled_no_support=" << ((cs > 0 && mr == 0) ? 1 : 0)
+			       << "\tallele_preview=" << alleles[old_idx].substr(0, 30)
+			       << "\n";
+		}
+	}
 
 	//Print the allele count information
 	logger << "Allele counts" << std::endl;
