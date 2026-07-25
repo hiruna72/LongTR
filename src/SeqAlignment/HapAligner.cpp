@@ -251,6 +251,15 @@ void HapAligner::align_seq_to_hap(Haplotype* haplotype, bool reuse_alns,
     return;
    }
 
+  // Skip loci whose DP matrix would not fit in an int: n and m are ints, so n*m (the new[] size just
+  // below, and the largest index i*m+j == n*m-1) overflows once n*m > INT_MAX, giving a negative length
+  // (std::bad_array_new_length, cf. upstream issue #15) or wrapped, out-of-bounds indices. The (long long)
+  // cast forces a 64-bit comparison so the guard itself cannot overflow.
+  if ((long long)n * m > INT_MAX){
+    left_prob = -700;
+    return;
+  }
+
   double* deletion_matrix = new double [n*m];
   double* match_matrix = new double [n*m];
   double* insertion_matrix = new double [n*m];
