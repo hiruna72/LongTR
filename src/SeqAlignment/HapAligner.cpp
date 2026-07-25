@@ -265,7 +265,12 @@ void HapAligner::align_seq_to_hap(Haplotype* haplotype, bool reuse_alns,
   match_matrix[0] = (haplotype_seq[0] == read_seq[0] ? MATCH : MISMATCH);
 
   for (int i = 1; i < m; ++i){
-    match_matrix[i] = deletion_matrix[i-1] + AlnModel->LOG_DEL_TO_MATCH + (haplotype_seq[i] == read_seq[0] ? MATCH : MISMATCH);
+    // First row = haplotype row 0, read column i. Per the interior convention
+    // haplotype_seq[row] == read_seq[col] (line 285), the emission must compare haplotype_seq[0] vs
+    // read_seq[i]. The previous haplotype_seq[i] == read_seq[0] was transposed: it mis-scored the
+    // boundary AND read haplotype_seq out of bounds whenever the read was longer than the haplotype
+    // (m > n). read_seq[i] (i < m) is always in range, so this also removes the heap-buffer-overflow.
+    match_matrix[i] = deletion_matrix[i-1] + AlnModel->LOG_DEL_TO_MATCH + (haplotype_seq[0] == read_seq[i] ? MATCH : MISMATCH);
     insertion_matrix[i] = IMPOSSIBLE;
     deletion_matrix[i] = AlnModel->LOG_MATCH_TO_DEL + left_prob; // First row
     left_prob += AlnModel->LOG_DEL_TO_DEL;
@@ -273,7 +278,9 @@ void HapAligner::align_seq_to_hap(Haplotype* haplotype, bool reuse_alns,
 
   left_prob = 0.0;
   for (int i = 1; i < n; ++i){
-    match_matrix[i * m] = insertion_matrix[(i-1)*m] + AlnModel->LOG_INS_TO_MATCH + (haplotype_seq[0] == read_seq[1] ? MATCH : MISMATCH);;
+    // First column = haplotype row i, read column 0. Emission must compare haplotype_seq[i] vs
+    // read_seq[0] (was transposed to haplotype_seq[0] == read_seq[1]).
+    match_matrix[i * m] = insertion_matrix[(i-1)*m] + AlnModel->LOG_INS_TO_MATCH + (haplotype_seq[i] == read_seq[0] ? MATCH : MISMATCH);
     insertion_matrix[i * m] = MATCH + AlnModel->LOG_MATCH_TO_INS + left_prob;
     deletion_matrix[i * m] = IMPOSSIBLE; // First column
     left_prob += AlnModel->LOG_INS_TO_INS;
