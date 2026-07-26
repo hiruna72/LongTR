@@ -298,7 +298,8 @@ std::string Genotyper::get_vcf_header(const std::string& fasta_path, const std::
       << "##FORMAT=<ID=" << "DSNP"        << ",Number=1,Type=Integer,Description=\"" << "Number of reads with SNP phasing information"                  << "\">" << "\n"
       << "##FORMAT=<ID=" << "PSNP"        << ",Number=1,Type=String,Description=\""  << "Number of reads with SNPs supporting each haploid genotype"    << "\">" << "\n"
       << "##FORMAT=<ID=" << "PDP"         << ",Number=1,Type=String,Description=\""  << "Fractional reads supporting each haploid genotype"             << "\">" << "\n"
-      << "##FORMAT=<ID=" << "GLDIFF"      << ",Number=1,Type=Float,Description=\""   << "Difference in likelihood between the reported and next best genotypes"  << "\">" << "\n";
+      << "##FORMAT=<ID=" << "GLDIFF"      << ",Number=1,Type=Float,Description=\""   << "Difference in likelihood between the reported and next best genotypes"  << "\">" << "\n"
+      << "##FORMAT=<ID=" << "DFLANKINDEL" << ",Number=1,Type=Integer,Description=\"" << "Number of reads with an indel in the regions flanking the STR"          << "\">" << "\n";
       //<< "##FORMAT=<ID=" << "DSTUTTER"    << ",Number=1,Type=Integer,Description=\"" << "Number of reads with a stutter indel in the STR region"        << "\">" << "\n"
 //      << "##FORMAT=<ID=" << "DFLANKINDEL" << ",Number=1,Type=Integer,Description=\"" << "Number of reads with an indel in the regions flanking the STR" << "\">" << "\n"
 //      << "##FORMAT=<ID=" << "AB"          << ",Number=1,Type=Float,Description=\""
