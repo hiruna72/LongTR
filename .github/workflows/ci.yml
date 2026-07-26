@@ -27,8 +27,11 @@ jobs:
           make HTSLIB-docker SPOA-docker
           make -j"$(nproc)" LongTR DenovoFinder
 
-      - name: Smoke test
-        run: ./LongTR --help
+      - name: Smoke test (--help + VCF validity)
+        run: |
+          ./LongTR --help
+          sudo apt-get install -y --no-install-recommends bcftools
+          bash test_data/ci_fixture/run_smoke_test.sh ./LongTR
 
   portable-build:
     name: Portable static build (Alpine / musl)
@@ -53,15 +56,32 @@ jobs:
             --build-arg VERSION="${{ steps.ver.outputs.version }}" \
             --target artifact --output type=local,dest=./dist .
 
-      - name: Verify static + smoke test
+      - name: Verify static + smoke test (--help + VCF validity)
         run: |
           file ./dist/LongTR
           ldd ./dist/LongTR || true          # musl static: prints "not a dynamic executable"
           ./dist/LongTR --help
+          sudo apt-get install -y --no-install-recommends bcftools
+          bash test_data/ci_fixture/run_smoke_test.sh ./dist/LongTR
 
-      - name: Upload build artifact
+      - name: Package portable binaries (stripped + debug)
+        id: pkg
+        run: |
+          HASH=$(git rev-parse --short=7 HEAD)
+          git diff --quiet HEAD -- 2>/dev/null || HASH="${HASH}-dirty"
+          NAME="LongTR-${HASH}-portable-linux-x86_64"
+          mkdir -p out
+          cp dist/LongTR       "out/${NAME}"        # stripped (small)
+          cp dist/LongTR-debug "out/${NAME}-debug"  # unstripped (gdb/backtrace symbols)
+          chmod +x "out/${NAME}" "out/${NAME}-debug"
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+          ls -l out
+
+      # GitHub zips a workflow artifact on download, so this yields
+      # LongTR-<hash>-portable-linux-x86_64.zip containing the stripped + -debug binaries.
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: LongTR-portable-linux-x86_64
-          path: dist/*.tar.gz
+          name: ${{ steps.pkg.outputs.name }}
+          path: out/*
           if-no-files-found: error

@@ -49,6 +49,7 @@ RUN file ./LongTR \
  && if ldd ./LongTR 2>/dev/null | grep -q '=>'; then \
         echo "ERROR: LongTR is dynamically linked" >&2; ldd ./LongTR >&2; exit 1; \
     fi \
+ && cp LongTR LongTR-debug && cp DenovoFinder DenovoFinder-debug \
  && strip LongTR DenovoFinder
 
 # Package a versioned tarball under /dist.
@@ -68,3 +69,4 @@ RUN DST="LongTR-${VERSION}-portable-linux-x86_64" \
 FROM scratch AS artifact
 COPY --from=build /dist/ /
 COPY --from=build /build/LongTR /LongTR
+COPY --from=build /build/LongTR-debug /LongTR-debug
