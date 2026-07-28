@@ -311,6 +311,7 @@ void HaplotypeGenerator::gen_candidate_seqs(const std::string& ref_seq, int idea
   std::map<std::string, int> read_counts, must_inc;
   int tot_reads = 0, tot_samples = 0;
 
+
   // (--log-alt-alleles) admission tags keyed by the PRE-trim candidate sequence. trim() below clips
   // shared flanks in place (preserving order), so we remap these onto the post-trim sequences afterward
   // and write them into admission_out, whose keys then match the stored HapBlock sequences read at VCF time.
@@ -422,6 +423,7 @@ void HaplotypeGenerator::gen_candidate_seqs(const std::string& ref_seq, int idea
   }
   //for (auto seq:sequences) std::cout << seq.first.size() << std::endl;
 
+
   // Identify how many alignments don't have a candidate haplotype:
   std::vector<std::pair<std::map<std::string, int>, int>> not_added_all_samples; //automatically initialized to zero
   for (unsigned int i = 0; i < alignments.size(); i++){
@@ -444,6 +446,19 @@ void HaplotypeGenerator::gen_candidate_seqs(const std::string& ref_seq, int idea
     }
 
   if (not_added_all_samples.size() > 0) { //There is at least one sample with ignored reads
+    // Cohort-level bookkeeping for the POA rescue path.
+    //
+    // Admission is still decided per sample below (same 10% cluster bar, same 80% coverage gate), but
+    // the proposals are gathered first and committed once, afterwards. Previously each sample pushed
+    // straight into `sequences` and skipped any consensus an *earlier* sample had already claimed, so
+    // the reported read_count belonged to whichever sample happened to be iterated first and
+    // sample_count was hardcoded to 0 -- both meaningless for an allele several samples support, and
+    // both dependent on sample ordering. The admitted set is unchanged by this; only the reported
+    // evidence and the commit order are.
+    std::map<std::string, int> poa_reads;    // consensus -> reads supporting it, summed over proposing samples
+    std::map<std::string, int> poa_samples;  // consensus -> number of samples proposing it
+    std::vector<std::string>   poa_committed;// consensuses from samples that cleared their coverage gate
+
     for (auto not_added_total_pair:not_added_all_samples){
         std::vector<std::string> uniqueStrings;
         for (auto pair : not_added_total_pair.first) {
@@ -496,7 +511,7 @@ void HaplotypeGenerator::gen_candidate_seqs(const std::string& ref_seq, int idea
 //            }
              // Add centroids of refined clusters to haplotype sequences
              int new_seqs_added = 0;
-             std::vector<std::pair<std::string, bool>> potential_seqs;
+             std::vector<std::string> proposed; // this sample's qualifying centroids
              for (auto iter = clusters.begin(); iter != clusters.end(); iter++) {
                 int sum_per_cluster = 0;
                 for (auto seq: iter->second){
@@ -506,28 +521,43 @@ void HaplotypeGenerator::gen_candidate_seqs(const std::string& ref_seq, int idea
                //std::cout << sum_per_cluster << " tot " << not_added_total_pair.second << std::endl;
                 if (sum_per_cluster > std::min((int)(not_added_total_pair.second*0.10), 10)) { // only include clusters that have considerable reads.
                     new_seqs_added += sum_per_cluster;
-                    if (std::find(sequences.begin(), sequences.end(), std::pair<std::string,bool>(iter->first,false)) == sequences.end() &
-                    std::find(sequences.begin(), sequences.end(), std::pair<std::string,bool>(iter->first,true)) == sequences.end()){ // if the centeroid is not already in the candidate haplotypes
-                        potential_seqs.push_back(std::pair<std::string,bool>(iter->first,true));
-                        if (log_alt && admission_out != NULL){
-                          std::ostringstream tag;
-                          tag << "\treason=INEXACT_POA\tread_count=" << sum_per_cluster
-                              << "\tsample_count=0\tmust_inc=0\ttot_reads=" << tot_reads << "\ttot_samples=" << tot_samples;
-                          admit_by_pretrim[iter->first] = tag.str();
-                        }
-                    }
+                    // Tally cohort support for every sample that proposes this consensus, whether or
+                    // not this sample goes on to clear its coverage gate -- that is the evidence a
+                    // reader of --log-alt-alleles wants, and it does not depend on sample order.
+                    poa_reads[iter->first]   += sum_per_cluster;
+                    poa_samples[iter->first] += 1;
+                    proposed.push_back(iter->first);
              }
            }
            if (new_seqs_added >= (int)(0.80*not_added_total_pair.second)){ // does current clusters cover considerable portion of ignored reads?
             //std::cout << "enough samples are covered" << new_seqs_added << "\t" << not_added_total_pair.second << std::endl;;
-            for (auto pair:potential_seqs){
-                sequences.push_back(pair);
-            }
+            poa_committed.insert(poa_committed.end(), proposed.begin(), proposed.end());
             finished = true;
            }
        }
     }
+
+    // Commit the union of every committing sample's proposals, in a canonical order and with
+    // cohort-level counts. Deduplicating here is what the per-sample `std::find` against `sequences`
+    // used to do, minus the dependence on which sample got there first.
+    std::sort(poa_committed.begin(), poa_committed.end(), orderByLengthAndSequence);
+    poa_committed.erase(std::unique(poa_committed.begin(), poa_committed.end()), poa_committed.end());
+    for (auto seq_iter = poa_committed.begin(); seq_iter != poa_committed.end(); seq_iter++){
+      const std::string& consensus = *seq_iter;
+      if (std::find(sequences.begin(), sequences.end(), std::pair<std::string,bool>(consensus,false)) != sequences.end() ||
+          std::find(sequences.begin(), sequences.end(), std::pair<std::string,bool>(consensus,true))  != sequences.end())
+        continue; // already a candidate haplotype from the VCF/STRONG/AGGREGATE passes
+      sequences.push_back(std::pair<std::string,bool>(consensus,true));
+      if (log_alt && admission_out != NULL){
+        std::ostringstream tag;
+        tag << "\treason=INEXACT_POA\tread_count=" << poa_reads[consensus]
+            << "\tsample_count=" << poa_samples[consensus] << "\tmust_inc=0"
+            << "\ttot_reads=" << tot_reads << "\ttot_samples=" << tot_samples;
+        admit_by_pretrim[consensus] = tag.str();
+      }
+    }
   }
+
 
   //Sort regions by length and then by sequence (apart from reference sequence)
   std::sort(sequences.begin()+1, sequences.end(), orderByLengthAndSequencePair);
