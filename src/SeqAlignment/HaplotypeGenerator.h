@@ -19,6 +19,9 @@
 // Default seed for the POA cluster-subsampling RNG (HaplotypeGenerator::poa()). A fixed default makes
 // runs bit-reproducible; override with --seed to probe how sensitive calls are to the subsample.
 constexpr uint32_t DEFAULT_POA_SEED = 42;
+// Cluster size at or above which poa() subsamples instead of using every sequence. Trades POA cost
+// against consensus quality; also lets tests force the subsampling path on small fixtures.
+constexpr int DEFAULT_POA_CLUSTER_LIMIT = 30;
 
 class HaplotypeGenerator {
  private:
@@ -61,6 +64,7 @@ class HaplotypeGenerator {
   // differing between N single-sample BAMs and one multi-sample BAM) would change the calls. Reseeding
   // per call makes a cluster's subsample a function of the seed and that cluster alone.
   uint32_t poa_seed_ = DEFAULT_POA_SEED;
+  int poa_cluster_limit_ = DEFAULT_POA_CLUSTER_LIMIT;
 
   void trim(int ideal_min_length,
 	    int32_t& region_start, int32_t& region_end, std::vector<std::pair<std::string, bool>>& sequences) const;
@@ -123,6 +127,10 @@ class HaplotypeGenerator {
 
   // Seed for the POA cluster-subsampling RNG (see poa()).
   void set_seed(uint32_t seed){ poa_seed_ = seed; }
+
+  // Cluster size at/above which poa() subsamples. Lower is cheaper but coarser; also lets small
+  // test fixtures reach the subsampling path that otherwise only triggers at realistic depth.
+  void set_poa_cluster_limit(int limit){ poa_cluster_limit_ = limit; }
 
   // Wall-clock watchdog hooks. set_deadline() shares the per-locus deadline; timed_out() reports abort.
   void set_deadline(std::chrono::steady_clock::time_point deadline, bool enabled){ wd_deadline_ = deadline; wd_enabled_ = enabled; }

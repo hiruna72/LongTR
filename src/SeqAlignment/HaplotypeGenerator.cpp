@@ -169,7 +169,7 @@ void HaplotypeGenerator::poa(const std::vector<std::string>& seqs, std::string& 
     std::unique_ptr<spoa::AlignmentEngine> alignment_engine;
     alignment_engine =spoa::AlignmentEngine::Create(static_cast<spoa::AlignmentType>(1),(std::int8_t) 1, (std::int8_t) -1,(std::int8_t) -1);
     spoa::Graph graph{};
-    int cluster_size_limit = 30;
+    const int cluster_size_limit = poa_cluster_limit_;
     //std::cout << "total " << seqs.size() << std::endl;
     if (seqs.size() < cluster_size_limit){
         for (const auto& seq: seqs) {

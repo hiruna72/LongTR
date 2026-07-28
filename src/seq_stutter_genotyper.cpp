@@ -427,6 +427,7 @@ bool SeqStutterGenotyper::build_haplotype(const std::string& chrom_seq, std::vec
 
 	HaplotypeGenerator hap_generator(min_aln_start, max_aln_stop, INDEL_FLANK_LEN);
 	hap_generator.set_seed(poa_seed_);                              // deterministic POA subsampling
+	hap_generator.set_poa_cluster_limit(poa_cluster_limit_);
 	hap_generator.set_deadline(locus_deadline_, watchdog_enabled_); // wall-clock watchdog covers POA
 	const std::vector<Region>& regions = region_group_->regions();
 	bool success = true;

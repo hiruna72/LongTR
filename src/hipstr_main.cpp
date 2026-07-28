@@ -93,6 +93,8 @@ void print_usage(int def_mdist, int def_min_reads, int def_max_reads, int def_ma
 	    << "\t" << "                                      "  << "\t" << " whose genotyping (POA + alignment) exceeds this many seconds (Default = off)" << "\n"
 	    << "\t" << "--seed <int>                          "  << "\t" << "Seed for the POA cluster-subsampling RNG. Runs with the same seed and input are" << "\n"
 	    << "\t" << "                                      "  << "\t" << " bit-reproducible; vary it to probe subsample sensitivity (Default = 42)" << "\n"
+	    << "\t" << "--poa-cluster-limit <int>             "  << "\t" << "Cluster size at/above which POA subsamples --seed-selected sequences instead of" << "\n"
+	    << "\t" << "                                      "  << "\t" << " using every one. Lower is faster but gives a coarser consensus (Default = 30)" << "\n"
 	    << "\t" << "--log-locus-signals                   "  << "\t" << "Emit a machine-parseable LOCUS_SIGNALS line per locus (nhap, read bp," << "\n"
 	    << "\t" << "                                      "  << "\t" << " max_hap_len, work, hap_build_sec, hap_aln_sec) for k calibration (Default = off)" << "\n"
 	    << "\t" << "--log-alt-alleles                   "  << "\t" << "Emit one ALT_ALLELE line per VCF ALT with its admission reason" << "\n"
@@ -210,6 +212,7 @@ void parse_command_line_args(int argc, char** argv,
     {"skip-aln-work-factor", required_argument, 0, 1003},
     {"max-locus-sec", required_argument, 0, 1004},
     {"seed", required_argument, 0, 1005},
+    {"poa-cluster-limit", required_argument, 0, 1006},
     {"log-locus-signals",  no_argument, &(bam_processor.LOG_LOCUS_SIGNALS), 1},
     {"log-alt-alleles",  no_argument, &(bam_processor.LOG_ALT_ALLELES), 1},
     {0, 0, 0, 0}
@@ -288,6 +291,11 @@ void parse_command_line_args(int argc, char** argv,
       break;
     case 1005:
       bam_processor.POA_SEED = (uint32_t)strtoul(optarg, NULL, 10);
+      break;
+    case 1006:
+      bam_processor.POA_CLUSTER_LIMIT = atoi(optarg);
+      if (bam_processor.POA_CLUSTER_LIMIT < 2)
+        printErrorAndDie("--poa-cluster-limit must be at least 2");
       break;
     case 'l':
       log_file = std::string(optarg);

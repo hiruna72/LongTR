@@ -114,6 +114,7 @@ public:
     SKIP_ALN_WORK_FACTOR   = -1;
     MAX_LOCUS_SEC          = -1;
     POA_SEED               = DEFAULT_POA_SEED;
+    POA_CLUSTER_LIMIT      = DEFAULT_POA_CLUSTER_LIMIT;
     LOG_LOCUS_SIGNALS      = 0;
     LOG_ALT_ALLELES      = 0;
     MAX_FLANK_HAPLOTYPES   = 4;
@@ -260,6 +261,7 @@ public:
   double SKIP_ALN_WORK_FACTOR; // Skip (and log) any locus whose predicted alignment work exceeds N*M (N = this). <=0 disables.
   uint32_t POA_SEED;           // Seed for the POA cluster-subsampling RNG. Fixed by default so runs are
                                // bit-reproducible; see doc/bug_poa_random_subsample.md.
+  int POA_CLUSTER_LIMIT;       // Cluster size at/above which POA subsamples; POA cost vs consensus quality.
   double MAX_LOCUS_SEC;        // Wall-clock watchdog: per-locus genotyping budget (POA + alignment) in seconds; abort+skip over-budget loci. <=0 disables.
   int LOG_LOCUS_SIGNALS;      // If set, emit per-locus predictive signals (LOCUS_SIGNALS line + human-readable) for k calibration. Default off.
   int LOG_ALT_ALLELES;      // If set, emit one ALT_ALLELE line per surviving ALT (admission reason/counts + calling support). Default off.
