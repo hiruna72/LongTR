@@ -181,9 +181,14 @@ void HaplotypeGenerator::poa(const std::vector<std::string>& seqs, std::string& 
         consensus = graph.GenerateConsensus();
     }
     else{
+        // Subsample cluster_size_limit sequences. The generator is seeded from poa_seed_ (settable via
+        // set_seed()/--seed, default DEFAULT_POA_SEED) on every call. It previously used
+        // std::random_device, reseeding from system entropy each time, which made the POA consensus --
+        // and therefore the candidate haplotypes, the admitted ALT alleles and the genotype calls --
+        // differ between identical runs at every locus with a cluster of >= cluster_size_limit
+        // sequences. See doc/bug_poa_random_subsample.md.
         std::vector<int> indices;
-        std::random_device rd;
-        std::mt19937 gen(rd());
+        std::mt19937 gen(poa_seed_);
         std::uniform_int_distribution<int> distribution(0, seqs.size() - 1);
         while(indices.size() < cluster_size_limit){
             int randomInt = distribution(gen);

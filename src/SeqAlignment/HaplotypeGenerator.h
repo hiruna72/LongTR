@@ -2,8 +2,10 @@
 #define HAPLOTYPE_GENERATOR_H_
 
 #include <chrono>
+#include <cstdint>
 #include <iostream>
 #include <map>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -13,6 +15,10 @@
 #include "../stutter_model.h"
 #include "Haplotype.h"
 #include "HapBlock.h"
+
+// Default seed for the POA cluster-subsampling RNG (HaplotypeGenerator::poa()). A fixed default makes
+// runs bit-reproducible; override with --seed to probe how sensitive calls are to the subsample.
+constexpr uint32_t DEFAULT_POA_SEED = 42;
 
 class HaplotypeGenerator {
  private:
@@ -44,6 +50,17 @@ class HaplotypeGenerator {
     if (wd_enabled_ && std::chrono::steady_clock::now() > wd_deadline_){ wd_aborted_ = true; return true; }
     return false;
   }
+
+  // Seed for the POA cluster subsampling in poa(), which previously used std::random_device and so
+  // reseeded from system entropy on every call -- making genotypes differ between identical runs at
+  // any locus with a cluster of >= cluster_size_limit sequences (doc/bug_poa_random_subsample.md).
+  //
+  // poa() constructs a generator from this seed on EVERY call rather than drawing from one long-lived
+  // stream. That matters: a per-locus stream would make each cluster's subsample depend on how many
+  // clusters were drawn before it, so any change in cluster ordering (e.g. the read arrival order
+  // differing between N single-sample BAMs and one multi-sample BAM) would change the calls. Reseeding
+  // per call makes a cluster's subsample a function of the seed and that cluster alone.
+  uint32_t poa_seed_ = DEFAULT_POA_SEED;
 
   void trim(int ideal_min_length,
 	    int32_t& region_start, int32_t& region_end, std::vector<std::pair<std::string, bool>>& sequences) const;
@@ -103,6 +120,9 @@ class HaplotypeGenerator {
 			   bool log_alt, std::map<std::string, std::string>* admission_out);
 
   bool fuse_haplotype_blocks(const std::string& chrom_seq);
+
+  // Seed for the POA cluster-subsampling RNG (see poa()).
+  void set_seed(uint32_t seed){ poa_seed_ = seed; }
 
   // Wall-clock watchdog hooks. set_deadline() shares the per-locus deadline; timed_out() reports abort.
   void set_deadline(std::chrono::steady_clock::time_point deadline, bool enabled){ wd_deadline_ = deadline; wd_enabled_ = enabled; }
