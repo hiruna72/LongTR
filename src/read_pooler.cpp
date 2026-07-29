@@ -19,7 +19,12 @@ int32_t ReadPooler::add_alignment(Alignment& aln){
   //
   // Including the alignment in the key restores the premise pooling relies on: members are now
   // genuinely identical inputs, so sharing one DP result is exact and the output matches what you would
-  // get with pooling disabled. Cost: +0.10% pools (31,143 -> 31,174 on the 107-locus ONT fixture).
+  // get with pooling disabled.
+  //
+  // Cost, measured on 10 ONT samples: +0.02% pools on an unbiased 492-locus sample (91,096 -> 91,114;
+  // 485 of 492 loci unchanged, worst locus +2.8%). Pooling still removes 45.5% of alignments, unchanged
+  // to one decimal. The tail is real but narrow: at loci selected *because* they had cross-sample
+  // alignment conflicts the growth reaches +2.3%, and the worst single locus observed was +9.9%.
   // See doc/bug_read_pool_key_ignores_alignment.md.
   //
   // '|' separates the fields so the concatenation is unambiguous; it cannot occur in a sequence (ACGTN)
