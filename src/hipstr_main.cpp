@@ -115,7 +115,10 @@ void print_usage(int def_mdist, int def_min_reads, int def_max_reads, int def_ma
 	    << "\t" << "--hap-chr-file       <hap_chroms.txt> "  << "\t" << "File containing chromosomes to treat as haploid, one per line"                        << "\n"
 	    << "\t" << "--min-reads          <num_reads>      "  << "\t" << "Minimum total reads required to genotype a locus (Default = " << def_min_reads << ")" << "\n"
 	    << "\t" << "--max-reads          <num_reads>      "  << "\t" << "Skip a locus if it has more than NUM_READS reads (Default = " << def_max_reads << ")" << "\n"
-	    << "\t" << "--max-tr-len         <max_bp>         "  << "\t" << "Only genotype TRs in the provided BED file with length < MAX_BP (Default = " << def_max_str_len << ")" << "\n" << std::endl;
+	    << "\t" << "--max-tr-len         <max_bp>         "  << "\t" << "Only genotype TRs in the provided BED file with length < MAX_BP (Default = " << def_max_str_len << ")" << "\n"
+	    << "\t" << "--bam-cache-mb       <mb>             "  << "\t" << "Cache MB of decompressed BGZF blocks per BAM file (Default = 0, disabled)." << "\n"
+	    << "\t" << "                                      "  << "\t" << " Nearby loci re-read almost the same blocks, so this avoids repeated decompression." << "\n"
+	    << "\t" << "                                      "  << "\t" << " Total memory is MB x (number of BAM files). Does not change output." << "\n" << std::endl;
     //<< "\t" << "--skip-genotyping                     "  << "\t" << "Don't perform any STR genotyping and merely compute the stutter model for each STR"  << "\n"
     //<< "\t" << "--dont-use-all-reads                  "  << "\t" << "Only utilize the reads HipSTR thinks will be informative for genotyping"   << "\n"
     //<< "\t" << "                                      "  << "\t" << " Enabling this option usually slightly decreases accuracy but shortens runtimes (~2x)"      << "\n"
@@ -213,6 +216,7 @@ void parse_command_line_args(int argc, char** argv,
     {"max-locus-sec", required_argument, 0, 1004},
     {"seed", required_argument, 0, 1005},
     {"poa-cluster-limit", required_argument, 0, 1006},
+    {"bam-cache-mb", required_argument, 0, 1007},
     {"log-locus-signals",  no_argument, &(bam_processor.LOG_LOCUS_SIGNALS), 1},
     {"log-alt-alleles",  no_argument, &(bam_processor.LOG_ALT_ALLELES), 1},
     {0, 0, 0, 0}
@@ -291,6 +295,11 @@ void parse_command_line_args(int argc, char** argv,
       break;
     case 1005:
       bam_processor.POA_SEED = (uint32_t)strtoul(optarg, NULL, 10);
+      break;
+    case 1007:
+      bam_processor.BGZF_CACHE_MB = atoi(optarg);
+      if (bam_processor.BGZF_CACHE_MB < 0)
+        printErrorAndDie("--bam-cache-mb cannot be negative");
       break;
     case 1006:
       bam_processor.POA_CLUSTER_LIMIT = atoi(optarg);
@@ -494,7 +503,13 @@ int main(int argc, char** argv){
   // Open all BAM/CRAM files
   std::string cram_fasta_path = fasta_file;
   int merge_type = BamCramMultiReader::ORDER_ALNS_BY_FILE;
-  BamCramMultiReader reader(bam_files, cram_fasta_path, merge_type);
+  // The cache budget is per open file, so report the total -- it is what the node actually pays,
+  // and with per-file input (one reader per sample) it is N times what was asked for.
+  if (bam_processor.BGZF_CACHE_MB > 0)
+    bam_processor.full_logger() << "BGZF block cache: " << bam_processor.BGZF_CACHE_MB << " MB per file x "
+				<< bam_files.size() << " file(s) = "
+				<< (size_t)bam_processor.BGZF_CACHE_MB * bam_files.size() << " MB for this shard" << std::endl;
+  BamCramMultiReader reader(bam_files, cram_fasta_path, merge_type, true, bam_processor.BGZF_CACHE_MB);
 
   // Construct filename->read group map (if one has been specified) and determine the list
   // of samples of interest based on either the specified names or the RG tags in the BAM/CRAM headers

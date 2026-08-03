@@ -55,6 +55,13 @@ OBJ_DENOVO  := $(SRC_DENOVO:.cpp=.o)
 .PHONY: all
 all: HTSLIB-docker SPOA-docker LongTR DenovoFinder test/fast_ops_test test/haplotype_test test/read_vcf_alleles_test test/snp_tree_test test/vcf_snp_tree_test
 
+# Rebuild every object when any header changes. The `include $(subst .cpp,.d,$(SRC))` further down
+# keys off an undefined SRC, so it expands to nothing and header dependencies have never been
+# tracked: editing a header rebuilt nothing, and the resulting binary could link objects compiled
+# against two different layouts of the same class (observed as heap corruption at exit).
+# Must stay BELOW `all`, or the first object becomes make's default goal.
+$(OBJ_COMMON) $(OBJ_HIPSTR) $(OBJ_SEQALN) $(OBJ_DENOVO): $(wildcard src/*.h src/SeqAlignment/*.h src/denovos/*.h)
+
 # Create a tarball with static binaries
 .PHONY: static-dist
 static-dist:
