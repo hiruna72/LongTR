@@ -38,25 +38,31 @@ WORKDIR /build
 COPY . /build
 
 # Build the vendored deps (htslib without network, spoa with portable SSE4.1) and
-# then link LongTR + DenovoFinder fully statically. Two make invocations so the
+# then link LongTR + DenovoFinder + ShardPlanner fully statically. Two make invocations so the
 # dependency archives are guaranteed built before the final link (the Makefile does
 # not declare that edge explicitly).
+#
+# ShardPlanner ships with LongTR deliberately: longtr_joint_call.pbs looks for it at
+# $(dirname $LONGTR)/ShardPlanner, and it predicts what THIS htslib's hts_itr_query() will do, so
+# it has to be the same build as the LongTR it plans for.
 RUN make PORTABLE=1 HTSLIB-docker SPOA-docker \
- && make -j"$(nproc)" PORTABLE=1 LongTR DenovoFinder
+ && make -j"$(nproc)" PORTABLE=1 LongTR DenovoFinder ShardPlanner
 
-# Assert the binary really is static; fail the build otherwise.
-RUN file ./LongTR \
- && if ldd ./LongTR 2>/dev/null | grep -q '=>'; then \
-        echo "ERROR: LongTR is dynamically linked" >&2; ldd ./LongTR >&2; exit 1; \
-    fi \
- && cp LongTR LongTR-debug && cp DenovoFinder DenovoFinder-debug \
- && strip LongTR DenovoFinder
+# Assert the binaries really are static; fail the build otherwise.
+RUN for b in LongTR ShardPlanner; do \
+        file "./$b" \
+     && if ldd "./$b" 2>/dev/null | grep -q '=>'; then \
+            echo "ERROR: $b is dynamically linked" >&2; ldd "./$b" >&2; exit 1; \
+        fi; \
+    done \
+ && cp LongTR LongTR-debug && cp DenovoFinder DenovoFinder-debug && cp ShardPlanner ShardPlanner-debug \
+ && strip LongTR DenovoFinder ShardPlanner
 
 # Package a versioned tarball under /dist.
 ARG VERSION=dev
 RUN DST="LongTR-${VERSION}-portable-linux-x86_64" \
  && mkdir -p "/dist/${DST}/scripts" \
- && cp LongTR DenovoFinder VizAln VizAlnPdf README.md "/dist/${DST}/" \
+ && cp LongTR DenovoFinder ShardPlanner VizAln VizAlnPdf README.md "/dist/${DST}/" \
  && cp scripts/filter_haploid_vcf.py scripts/filter_vcf.py \
        scripts/generate_aln_html.py scripts/html_alns_to_pdf.py "/dist/${DST}/scripts/" \
  && tar -czf "/dist/${DST}.tar.gz" -C /dist "${DST}" \
@@ -70,3 +76,5 @@ FROM scratch AS artifact
 COPY --from=build /dist/ /
 COPY --from=build /build/LongTR /LongTR
 COPY --from=build /build/LongTR-debug /LongTR-debug
+COPY --from=build /build/ShardPlanner /ShardPlanner
+COPY --from=build /build/ShardPlanner-debug /ShardPlanner-debug

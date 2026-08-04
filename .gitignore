@@ -1,6 +1,7 @@
 DenovoFinder
 LongTR
 PhasingChecker
+ShardPlanner
 test/allele_expansion_test
 test/base_qual_test
 test/em_stutter_test

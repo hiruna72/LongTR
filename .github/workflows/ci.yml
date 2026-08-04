@@ -25,13 +25,16 @@ jobs:
         run: |
           make version
           make HTSLIB-docker SPOA-docker
-          make -j"$(nproc)" LongTR DenovoFinder
+          make -j"$(nproc)" LongTR DenovoFinder ShardPlanner
 
       - name: Smoke test (--help + VCF validity)
         run: |
           ./LongTR --help
           sudo apt-get install -y --no-install-recommends bcftools
           bash test_data/ci_fixture/run_smoke_test.sh ./LongTR
+
+      - name: ShardPlanner contract test (locus conservation + verbatim round-trip)
+        run: bash test_data/ci_fixture/run_shard_planner_test.sh ./ShardPlanner
 
       - name: Determinism test (identical input -> identical VCF)
         run: bash test_data/determinism_fixture/run_determinism_test.sh ./LongTR
@@ -61,11 +64,13 @@ jobs:
 
       - name: Verify static + smoke test (--help + VCF validity)
         run: |
-          file ./dist/LongTR
+          file ./dist/LongTR ./dist/ShardPlanner
           ldd ./dist/LongTR || true          # musl static: prints "not a dynamic executable"
+          ldd ./dist/ShardPlanner || true
           ./dist/LongTR --help
           sudo apt-get install -y --no-install-recommends bcftools
           bash test_data/ci_fixture/run_smoke_test.sh ./dist/LongTR
+          bash test_data/ci_fixture/run_shard_planner_test.sh ./dist/ShardPlanner
 
       - name: Determinism test (identical input -> identical VCF)
         run: bash test_data/determinism_fixture/run_determinism_test.sh ./dist/LongTR
@@ -79,7 +84,11 @@ jobs:
           mkdir -p out
           cp dist/LongTR       "out/${NAME}"        # stripped (small)
           cp dist/LongTR-debug "out/${NAME}-debug"  # unstripped (gdb/backtrace symbols)
-          chmod +x "out/${NAME}" "out/${NAME}-debug"
+          # ShardPlanner keeps its plain name: longtr_joint_call.pbs resolves it as
+          # $(dirname $LONGTR)/ShardPlanner, so it must sit beside LongTR under that exact name.
+          cp dist/ShardPlanner       "out/ShardPlanner"
+          cp dist/ShardPlanner-debug "out/ShardPlanner-debug"
+          chmod +x "out/${NAME}" "out/${NAME}-debug" "out/ShardPlanner" "out/ShardPlanner-debug"
           echo "name=${NAME}" >> "$GITHUB_OUTPUT"
           ls -l out
 

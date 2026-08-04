@@ -53,7 +53,7 @@ OBJ_SEQALN  := $(SRC_SEQALN:.cpp=.o)
 OBJ_DENOVO  := $(SRC_DENOVO:.cpp=.o)
 
 .PHONY: all
-all: HTSLIB-docker SPOA-docker LongTR DenovoFinder test/fast_ops_test test/haplotype_test test/read_vcf_alleles_test test/snp_tree_test test/vcf_snp_tree_test
+all: HTSLIB-docker SPOA-docker LongTR DenovoFinder ShardPlanner test/fast_ops_test test/haplotype_test test/read_vcf_alleles_test test/snp_tree_test test/vcf_snp_tree_test
 
 # Rebuild every object when any header changes. The `include $(subst .cpp,.d,$(SRC))` further down
 # keys off an undefined SRC, so it expands to nothing and header dependencies have never been
@@ -99,7 +99,7 @@ version:
 # Clean the generated files of the main project only
 .PHONY: clean
 clean:
-	rm -f *~ src/*.o src/*.d src/*~ src/SeqAlignment/*~ src/SeqAlignment/*.o src/denovos/*~ src/denovos/*.o LongTR DenovoFinder test/allele_expansion_test test/fast_ops_test test/haplotype_test test/read_vcf_alleles_test test/snp_tree_test test/vcf_snp_tree_test
+	rm -f *~ src/*.o src/*.d src/*~ src/SeqAlignment/*~ src/SeqAlignment/*.o src/denovos/*~ src/denovos/*.o LongTR DenovoFinder ShardPlanner test/allele_expansion_test test/fast_ops_test test/haplotype_test test/read_vcf_alleles_test test/snp_tree_test test/vcf_snp_tree_test
 
 # Clean all compiled files
 .PHONY: clean-all
@@ -153,6 +153,11 @@ LongTR: $(OBJ_COMMON) $(OBJ_HIPSTR) $(HTSLIB_LIB) $(OBJ_SEQALN)
 	$(CXX) $(LDFLAGS) $(CXXFLAGS) $(INCLUDE) -o $@ $^ $(LIBS)
 
 DenovoFinder: $(OBJ_DENOVO) $(HTSLIB_LIB)
+	$(CXX) $(LDFLAGS) $(CXXFLAGS) $(INCLUDE) -o $@ $^ $(LIBS)
+
+# Must link the SAME htslib the run uses: it predicts what hts_itr_query() will do, so a different
+# htslib could compute a different chunk list. Building it here guarantees that.
+ShardPlanner: src/shard_planner.cpp src/error.cpp $(HTSLIB_LIB)
 	$(CXX) $(LDFLAGS) $(CXXFLAGS) $(INCLUDE) -o $@ $^ $(LIBS)
 
 PhasingChecker: src/check_phasing.cpp src/region.cpp src/error.cpp src/haplotype_tracker.cpp src/version.cpp src/pedigree.cpp src/vcf_reader.cpp src/stringops.cpp $(HTSLIB_LIB)
